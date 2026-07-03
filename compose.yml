@@ -3,13 +3,13 @@ services:
     image: postgres:18-alpine
     restart: always
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
+      POSTGRES_USER: incident
+      POSTGRES_PASSWORD: incident
+      POSTGRES_DB: incident
     ports:
-      - "5432:5432"
+      - "5499:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - incident-data:/var/lib/postgresql
 
 volumes:
-  pgdata:
+  incident-data:

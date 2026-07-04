@@ -3,10 +3,24 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any
 
-import httpx
 from pydantic import BaseModel, Field
-
-SLACK_API_BASE = "https://slack.com/api"
+from slack_sdk.http_retry.builtin_async_handlers import (
+    AsyncConnectionErrorRetryHandler,
+    AsyncRateLimitErrorRetryHandler,
+)
+from slack_sdk.models.blocks import (
+    Block,
+    DatePickerElement,
+    InputBlock,
+    InputInteractiveElement,
+    Option,
+    PlainTextInputElement,
+    StaticSelectElement,
+    UserSelectElement,
+)
+from slack_sdk.models.views import View
+from slack_sdk.web.async_client import AsyncWebClient
+from slack_sdk.webhook.async_client import AsyncWebhookClient
 
 
 class Subcommand(StrEnum):
@@ -86,132 +100,83 @@ class InteractivityPayload(BaseModel):
 
 
 class SlackClient:
-    def __init__(self, token: str, http: httpx.AsyncClient) -> None:
-        self._token = token
-        self._http = http
-
-    async def _post(self, method: str, body: dict[str, Any]) -> dict[str, Any]:
-        resp = await self._http.post(
-            f"{SLACK_API_BASE}/{method}",
-            json=body,
-            headers={"Authorization": f"Bearer {self._token}"},
+    def __init__(self, token: str) -> None:
+        self._web = AsyncWebClient(
+            token=token,
+            retry_handlers=[
+                AsyncConnectionErrorRetryHandler(max_retry_count=2),
+                AsyncRateLimitErrorRetryHandler(max_retry_count=3),
+            ],
         )
-        data = resp.json()
-        if not data.get("ok"):
-            raise RuntimeError(f"slack {method} failed: {data.get('error')} ({data})")
-        return data
 
-    async def _get(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        resp = await self._http.get(
-            f"{SLACK_API_BASE}/{method}",
-            params=params,
-            headers={"Authorization": f"Bearer {self._token}"},
-        )
-        data = resp.json()
-        if not data.get("ok"):
-            raise RuntimeError(f"slack {method} failed: {data.get('error')} ({data})")
-        return data
+    async def team_id(self) -> str:
+        return (await self._web.auth_test())["team_id"]
 
-    async def auth_test(self) -> dict[str, Any]:
-        return await self._post("auth.test", {})
+    async def users_info(self, user_id: str) -> dict[str, Any]:
+        return (await self._web.users_info(user=user_id))["user"]
 
     async def users_list(self) -> list[SlackMember]:
         members: list[SlackMember] = []
-        cursor = ""
-        while True:
-            params: dict[str, Any] = {"limit": 200}
-            if cursor:
-                params["cursor"] = cursor
-            data = await self._get("users.list", params)
-            members.extend(SlackMember.model_validate(m) for m in data.get("members", []))
-            cursor = data.get("response_metadata", {}).get("next_cursor", "")
-            if not cursor:
-                return members
+        async for page in await self._web.users_list(limit=200):
+            members.extend(SlackMember.model_validate(m) for m in page["members"])
+        return members
 
     async def usergroup_member_ids(self, handle: str) -> set[str]:
-        groups = (await self._get("usergroups.list", {})).get("usergroups", [])
-        match = next((g for g in groups if g.get("handle") == handle), None)
+        groups = (await self._web.usergroups_list())["usergroups"]
+        match = next((g for g in groups if g["handle"] == handle), None)
         if match is None:
-            available = ", ".join(sorted(g.get("handle", "?") for g in groups))
+            available = ", ".join(sorted(g["handle"] for g in groups))
             raise RuntimeError(f"user group @{handle} not found (have: {available})")
-        data = await self._get("usergroups.users.list", {"usergroup": match["id"]})
-        return set(data.get("users", []))
+        return set((await self._web.usergroups_users_list(usergroup=match["id"]))["users"])
 
-    async def views_open(self, trigger_id: str, view: dict[str, Any]) -> dict[str, Any]:
-        return await self._post("views.open", {"trigger_id": trigger_id, "view": view})
+    async def views_open(self, trigger_id: str, view: View) -> None:
+        await self._web.views_open(trigger_id=trigger_id, view=view)
 
-    async def post_message(
-        self, channel: str, text: str, blocks: list[dict[str, Any]] | None = None
-    ) -> dict[str, Any]:
-        body: dict[str, Any] = {"channel": channel, "text": text}
-        if blocks is not None:
-            body["blocks"] = blocks
-        return await self._post("chat.postMessage", body)
+    async def post_message(self, channel: str, text: str) -> None:
+        await self._web.chat_postMessage(channel=channel, text=text)
 
-    async def users_info(self, user_id: str) -> dict[str, Any]:
-        data = await self._get("users.info", {"user": user_id})
-        return data["user"]
-
-    async def respond(
-        self, response_url: str, text: str, blocks: list[dict[str, Any]] | None = None
-    ) -> None:
-        body: dict[str, Any] = {"response_type": "ephemeral", "text": text}
-        if blocks is not None:
-            body["blocks"] = blocks
-        await self._http.post(response_url, json=body)
+    async def respond(self, response_url: str, text: str) -> None:
+        await AsyncWebhookClient(response_url).send(response_type="ephemeral", text=text)
 
 
-def _text(*, multiline: bool = False) -> dict[str, Any]:
-    return {"type": "plain_text_input", "action_id": "value", "multiline": multiline}
+def _text(*, multiline: bool = False) -> PlainTextInputElement:
+    return PlainTextInputElement(action_id="value", multiline=multiline)
 
 
-def _user_select() -> dict[str, Any]:
-    return {"type": "users_select", "action_id": "value"}
+def _user_select() -> UserSelectElement:
+    return UserSelectElement(action_id="value")
 
 
-def _datepicker() -> dict[str, Any]:
-    return {"type": "datepicker", "action_id": "value"}
+def _datepicker() -> DatePickerElement:
+    return DatePickerElement(action_id="value")
 
 
-def _priority_select() -> dict[str, Any]:
-    options = [
-        {"text": {"type": "plain_text", "text": f"P{p}"}, "value": str(p)} for p in range(1, 6)
-    ]
-    return {
-        "type": "static_select",
-        "action_id": "value",
-        "options": options,
-        "initial_option": options[0],
-    }
+def _priority_select() -> StaticSelectElement:
+    options = [Option(label=f"P{p}", value=str(p)) for p in range(1, 6)]
+    return StaticSelectElement(action_id="value", options=options, initial_option=options[0])
 
 
 def _input(
-    block_id: str, label: str, element: dict[str, Any], *, optional: bool = False
-) -> dict[str, Any]:
-    return {
-        "type": "input",
-        "block_id": block_id,
-        "optional": optional,
-        "label": {"type": "plain_text", "text": label},
-        "element": element,
-    }
+    block_id: str, label: str, element: InputInteractiveElement, *, optional: bool = False
+) -> InputBlock:
+    return InputBlock(block_id=block_id, label=label, element=element, optional=optional)
 
 
 def _modal(
-    callback_id: str, title: str, blocks: list[dict[str, Any]], metadata: ViewMetadata
-) -> dict[str, Any]:
-    return {
-        "type": "modal",
-        "callback_id": callback_id,
-        "private_metadata": metadata.model_dump_json(),
-        "title": {"type": "plain_text", "text": title},
-        "submit": {"type": "plain_text", "text": "Submit"},
-        "close": {"type": "plain_text", "text": "Cancel"},
-        "blocks": blocks,
-    }
+    callback_id: CallbackID, title: str, blocks: list[Block], metadata: ViewMetadata
+) -> View:
+    return View(
+        type="modal",
+        callback_id=callback_id,
+        private_metadata=metadata.model_dump_json(),
+        title=title,
+        submit="Submit",
+        close="Cancel",
+        blocks=blocks,
+    )
 
 
-def create_incident_modal(metadata: ViewMetadata) -> dict[str, Any]:
+def create_incident_modal(metadata: ViewMetadata) -> View:
     return _modal(
         CallbackID.CREATE_INCIDENT,
         "Create incident",
@@ -224,7 +189,7 @@ def create_incident_modal(metadata: ViewMetadata) -> dict[str, Any]:
     )
 
 
-def page_member_modal(metadata: ViewMetadata) -> dict[str, Any]:
+def page_member_modal(metadata: ViewMetadata) -> View:
     return _modal(
         CallbackID.PAGE_MEMBER,
         "Page someone",
@@ -237,7 +202,7 @@ def page_member_modal(metadata: ViewMetadata) -> dict[str, Any]:
     )
 
 
-def add_shift_modal(metadata: ViewMetadata) -> dict[str, Any]:
+def add_shift_modal(metadata: ViewMetadata) -> View:
     return _modal(
         CallbackID.ADD_SHIFT,
         "Add on-call shift",

@@ -13,7 +13,7 @@ async def backfill(
     slack: SlackClient,
     group_handle: str = ENG_GROUP_HANDLE,
 ) -> tuple[int, int]:
-    team_id = (await slack.auth_test())["team_id"]
+    team_id = await slack.team_id()
     group_ids = await slack.usergroup_member_ids(group_handle)
     members = await slack.users_list()
     upserted = 0

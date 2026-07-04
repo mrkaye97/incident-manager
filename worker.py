@@ -4,13 +4,13 @@ import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import date
 from enum import Enum
-from typing import Any, cast
+from typing import cast
 
-import httpx
 from asyncpg import Pool, create_pool
 from asyncpg.exceptions import ExclusionViolationError
 from hatchet_sdk import Context, Hatchet
 from pydantic import BaseModel
+from slack_sdk.models.views import View
 
 import db
 from backfill_members import backfill
@@ -155,7 +155,7 @@ async def _add_shift(life: Lifespan, payload: InteractivityPayload) -> None:
     )
 
 
-ModalBuilder = Callable[[ViewMetadata], dict[str, Any]]
+ModalBuilder = Callable[[ViewMetadata], View]
 ModalHandler = Callable[["Lifespan", InteractivityPayload], Awaitable[None]]
 
 
@@ -241,12 +241,10 @@ async def backfill_members_cron(_: EmptyInput, ctx: Context) -> None:
 async def lifespan() -> AsyncGenerator[Lifespan, None]:
     settings = Settings()  # ty: ignore[missing-argument]
     pool = cast(Pool, await create_pool(dsn=settings.database_url))
-    http = httpx.AsyncClient(timeout=10.0)
-    slack = SlackClient(settings.slack_bot_oauth_token, http)
+    slack = SlackClient(settings.slack_bot_oauth_token)
     try:
         yield Lifespan(pool, slack, settings)
     finally:
-        await http.aclose()
         await pool.close()
 
 

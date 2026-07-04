@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -97,7 +95,7 @@ async def handle_interactivity(
 ) -> None:
     if payload.type != "view_submission":
         return
-    
+
     match payload.view.callback_id:
         case CallbackID.CREATE_INCIDENT:
             await create_incident(conn, lifespan.slack, payload)

@@ -89,12 +89,14 @@ async def add_shift(
 
 
 async def current_oncall(conn: Connection) -> list[OnCallEntry]:
-    rows = await conn.fetch("""
+    rows = await conn.fetch(
+        """
         SELECT tm.name, tm.slack_user_id, s.escalation_priority
         FROM on_call_shift s
         JOIN team_member tm ON tm.id = s.team_member_id
         WHERE s.shift @> now()
         ORDER BY s.escalation_priority
-        """)
+        """
+    )
 
     return [OnCallEntry.model_validate(dict(r)) for r in rows]

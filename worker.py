@@ -66,24 +66,16 @@ HELP_TEXT = (
 )
 
 
-async def _resolve_member(life: Lifespan, slack_user_id: str) -> int:
+async def _require_member(life: Lifespan, channel_id: str, slack_user_id: str) -> int | None:
     async with life.pool.acquire() as conn:
-        existing = await db.member_id_by_slack_id(conn, slack_user_id)
-    if existing is not None:
-        return existing
-
-    name, handle = slack_user_id, None
-    try:
-        info = await life.slack.users_info(slack_user_id)
-        profile = info.get("profile", {})
-        name = (
-            profile.get("real_name") or info.get("real_name") or info.get("name") or slack_user_id
+        member_id = await db.member_id_by_slack_id(conn, slack_user_id)
+    if member_id is None:
+        await life.slack.post_message(
+            channel_id,
+            f":warning: <@{slack_user_id}> isn't on the team roster — "
+            "add them to @eng and re-run the backfill.",
         )
-        handle = info.get("name")
-    except Exception as exc:
-        logger.warning("users.info failed for %s: %s", slack_user_id, exc)
-    async with life.pool.acquire() as conn:
-        return await db.upsert_member(conn, slack_user_id, name, handle)
+    return member_id
 
 
 async def _respond_oncall(life: Lifespan, response_url: str) -> None:
@@ -103,7 +95,9 @@ async def _create_incident(life: Lifespan, payload: InteractivityPayload) -> Non
     channel_id = payload.metadata.channel_id
     name = payload.field("name")
     lead = payload.field("lead")
-    lead_id = await _resolve_member(life, lead)
+    lead_id = await _require_member(life, channel_id, lead)
+    if lead_id is None:
+        return
     async with life.pool.acquire() as conn:
         incident_id = await db.create_incident(
             conn, name, channel_id, lead_id, payload.field("description")
@@ -120,7 +114,9 @@ async def _page_member(life: Lifespan, payload: InteractivityPayload) -> None:
     target = payload.field("target")
     incident_raw = payload.field("incident_id")
     incident_id = int(incident_raw) if incident_raw and incident_raw.strip().isdigit() else None
-    member_id = await _resolve_member(life, target)
+    member_id = await _require_member(life, channel_id, target)
+    if member_id is None:
+        return
     async with life.pool.acquire() as conn:
         await db.create_page(conn, member_id, incident_id)
 
@@ -139,7 +135,9 @@ async def _add_shift(life: Lifespan, payload: InteractivityPayload) -> None:
     start = date.fromisoformat(payload.field("start"))
     end = date.fromisoformat(payload.field("end"))
     priority = int(payload.field("escalation_priority"))
-    member_id = await _resolve_member(life, member)
+    member_id = await _require_member(life, channel_id, member)
+    if member_id is None:
+        return
     try:
         async with life.pool.acquire() as conn:
             await db.add_shift(conn, member_id, start, end, priority)
@@ -160,8 +158,6 @@ ModalHandler = Callable[["Lifespan", InteractivityPayload], Awaitable[None]]
 
 
 class Modal(Enum):
-    """A modal flow: the slash subcommand that opens it, its view, and its submission handler."""
-
     CREATE = (
         Subcommand.CREATE,
         CallbackID.CREATE_INCIDENT,

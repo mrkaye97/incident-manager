@@ -4,7 +4,7 @@ version = "0.1.0"
 description = ""
 authors = [{ name = "mrkaye97", email = "mrkaye97@gmail.com" }]
 requires-python = ">=3.11,<4.0"
-dependencies = ["hatchet-sdk (>=1.33.15,<2.0.0)", "asyncpg (>=0.31.0,<0.32.0)", "pydantic-settings (>=2.14.2,<3.0.0)", "slack-sdk (>=3.43.0,<4.0.0)"]
+dependencies = ["hatchet-sdk @ git+https://github.com/hatchet-dev/hatchet.git@f90c7b367dc315f209706124605fccf41c97e3f0#subdirectory=sdks/python", "asyncpg (>=0.31.0,<0.32.0)", "pydantic-settings (>=2.14.2,<3.0.0)", "slack-sdk (>=3.43.0,<4.0.0)"]
 
 
 [build-system]

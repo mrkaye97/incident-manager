@@ -618,15 +618,13 @@ setuptools = ">=77.0.1"
 
 [[package]]
 name = "hatchet-sdk"
-version = "1.33.15"
+version = "1.33.16"
 description = "This is the official Python SDK for Hatchet, a distributed, fault-tolerant task queue. The SDK allows you to easily integrate Hatchet's task scheduling and workflow orchestration capabilities into your Python applications."
 optional = false
-python-versions = "<4,>=3.10"
+python-versions = ">=3.10,<4"
 groups = ["main"]
-files = [
-    {file = "hatchet_sdk-1.33.15-py3-none-any.whl", hash = "sha256:0139be6ff03d4a85fcacca9e927711787eeb9ec1a124d6d78b07eb3ddb674537"},
-    {file = "hatchet_sdk-1.33.15.tar.gz", hash = "sha256:88901987c09ea6b51544537ebd775701adcc4dda50486fc7804ab6ff2c29ad38"},
-]
+files = []
+develop = false
 
 [package.dependencies]
 aiohttp = ">=3.10.5,<4"
@@ -648,6 +646,13 @@ lint = ["black (==26.3.1)", "click (>=8.4.1)", "mypy (==1.20.0)", "psutil (>=6.0
 openai = ["openai-agents"]
 otel = ["opentelemetry-api (>=1.28.0,<2)", "opentelemetry-distro (>=0.49b0)", "opentelemetry-exporter-otlp (>=1.28.0,<2)", "opentelemetry-exporter-otlp-proto-http (>=1.28.0,<2)", "opentelemetry-instrumentation (>=0.49b0)", "opentelemetry-sdk (>=1.28.0,<2)"]
 test = ["boto3[s3] (>=1.43.29)", "botocore (>=1.43.34)", "psycopg[pool] (>=3.3.4,<4)", "pytest (>=9.1.1,<10)", "pytest-asyncio (>=1.4.0)", "pytest-env (>=1.6.0)", "pytest-retry (>=1.7.0)", "pytest-xdist (>=3.7.0)", "requests (>=2.34.2,<3)"]
+
+[package.source]
+type = "git"
+url = "https://github.com/hatchet-dev/hatchet.git"
+reference = "f90c7b367dc315f209706124605fccf41c97e3f0"
+resolved_reference = "f90c7b367dc315f209706124605fccf41c97e3f0"
+subdirectory = "sdks/python"
 
 [[package]]
 name = "idna"
@@ -1592,4 +1597,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4.0"
-content-hash = "b0969247b6cfdba4885330d0a59ec0418073509f985c9b3d1054994a43354dbe"
+content-hash = "d23256a3d2f8174fdfac4286fe476cd03508e3bcbbf0d5af03599d635ab1a83c"

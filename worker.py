@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import date
 from enum import Enum
-from typing import cast
+from typing import Annotated, Any, cast
 
-from asyncpg import Pool, create_pool
+from asyncpg import Connection, Pool, create_pool
 from asyncpg.exceptions import ExclusionViolationError
-from hatchet_sdk import Context, Hatchet
+from hatchet_sdk import Context, Depends, Hatchet
 from pydantic import BaseModel
 from slack_sdk.models.views import View
 
@@ -66,11 +67,12 @@ HELP_TEXT = (
 )
 
 
-async def _require_member(life: Lifespan, channel_id: str, slack_user_id: str) -> int | None:
-    async with life.pool.acquire() as conn:
-        member_id = await db.member_id_by_slack_id(conn, slack_user_id)
+async def _require_member(
+    conn: Connection, slack: SlackClient, channel_id: str, slack_user_id: str
+) -> int | None:
+    member_id = await db.member_id_by_slack_id(conn, slack_user_id)
     if member_id is None:
-        await life.slack.post_message(
+        await slack.post_message(
             channel_id,
             f":warning: <@{slack_user_id}> isn't on the team roster — "
             "add them to @eng and re-run the backfill.",
@@ -78,83 +80,81 @@ async def _require_member(life: Lifespan, channel_id: str, slack_user_id: str) -
     return member_id
 
 
-async def _respond_oncall(life: Lifespan, response_url: str) -> None:
-    async with life.pool.acquire() as conn:
-        oncall = await db.current_oncall(conn)
+async def _respond_oncall(conn: Connection, slack: SlackClient, response_url: str) -> None:
+    oncall = await db.current_oncall(conn)
     if not oncall:
-        await life.slack.respond(response_url, "Nobody is currently on call.")
+        await slack.respond(response_url, "Nobody is currently on call.")
         return
     lines = "\n".join(
         f"• P{r.escalation_priority}: " + (f"<@{r.slack_user_id}>" if r.slack_user_id else r.name)
         for r in oncall
     )
-    await life.slack.respond(response_url, f"*Currently on call*\n{lines}")
+    await slack.respond(response_url, f"*Currently on call*\n{lines}")
 
 
-async def _create_incident(life: Lifespan, payload: InteractivityPayload) -> None:
+async def _create_incident(
+    conn: Connection, slack: SlackClient, payload: InteractivityPayload
+) -> None:
     channel_id = payload.metadata.channel_id
     name = payload.field("name")
     lead = payload.field("lead")
-    lead_id = await _require_member(life, channel_id, lead)
+    lead_id = await _require_member(conn, slack, channel_id, lead)
     if lead_id is None:
         return
-    async with life.pool.acquire() as conn:
-        incident_id = await db.create_incident(
-            conn, name, channel_id, lead_id, payload.field("description")
-        )
-    await life.slack.post_message(
+    incident_id = await db.create_incident(
+        conn, name, channel_id, lead_id, payload.field("description")
+    )
+    await slack.post_message(
         channel_id,
         f":rotating_light: Incident #{incident_id} *{name}* opened by "
         f"<@{payload.user.id}> — lead <@{lead}>.",
     )
 
 
-async def _page_member(life: Lifespan, payload: InteractivityPayload) -> None:
+async def _page_member(conn: Connection, slack: SlackClient, payload: InteractivityPayload) -> None:
     channel_id = payload.metadata.channel_id
     target = payload.field("target")
     incident_raw = payload.field("incident_id")
     incident_id = int(incident_raw) if incident_raw and incident_raw.strip().isdigit() else None
-    member_id = await _require_member(life, channel_id, target)
+    member_id = await _require_member(conn, slack, channel_id, target)
     if member_id is None:
         return
-    async with life.pool.acquire() as conn:
-        await db.create_page(conn, member_id, incident_id)
+    await db.create_page(conn, member_id, incident_id)
 
     note = f" for incident #{incident_id}" if incident_id else ""
     reason = payload.field("reason")
     detail = f" — {reason}" if reason else ""
-    await life.slack.post_message(
+    await slack.post_message(
         channel_id,
         f":pager: <@{target}> you've been paged by <@{payload.user.id}>{note}{detail}",
     )
 
 
-async def _add_shift(life: Lifespan, payload: InteractivityPayload) -> None:
+async def _add_shift(conn: Connection, slack: SlackClient, payload: InteractivityPayload) -> None:
     channel_id = payload.metadata.channel_id
     member = payload.field("member")
     start = date.fromisoformat(payload.field("start"))
     end = date.fromisoformat(payload.field("end"))
     priority = int(payload.field("escalation_priority"))
-    member_id = await _require_member(life, channel_id, member)
+    member_id = await _require_member(conn, slack, channel_id, member)
     if member_id is None:
         return
     try:
-        async with life.pool.acquire() as conn:
-            await db.add_shift(conn, member_id, start, end, priority)
+        await db.add_shift(conn, member_id, start, end, priority)
     except ExclusionViolationError:
-        await life.slack.post_message(
+        await slack.post_message(
             channel_id,
             f":warning: <@{payload.user.id}> that P{priority} shift overlaps an existing one.",
         )
         return
-    await life.slack.post_message(
+    await slack.post_message(
         channel_id,
         f":calendar: <@{member}> is on call at P{priority} from {start} to {end}.",
     )
 
 
 ModalBuilder = Callable[[ViewMetadata], View]
-ModalHandler = Callable[["Lifespan", InteractivityPayload], Awaitable[None]]
+ModalHandler = Callable[[Connection, SlackClient, InteractivityPayload], Awaitable[None]]
 
 
 class Modal(Enum):
@@ -193,9 +193,34 @@ class Modal(Enum):
         return next((m for m in cls if m.callback_id == callback_id), None)
 
 
+def lifespan_dep(
+    _i: Any,
+    ctx: Context,
+) -> Lifespan:
+    return cast(Lifespan, ctx.lifespan)
+
+
+@asynccontextmanager
+async def connection(
+    _i: Any,
+    ctx: Context,
+    lifespan: Annotated[Lifespan, Depends(lifespan_dep)],
+) -> AsyncGenerator[Connection, None]:
+    async with lifespan.pool.acquire() as conn:
+        yield conn
+
+
+LifespanDep = Annotated[Lifespan, Depends(lifespan_dep)]
+ConnectionDep = Annotated[Connection, Depends(connection)]
+
+
 @hatchet.task(on_events=["slack:slash"], input_validator=SlackSlashCommand)
-async def handle_incident_slash_command(event: SlackSlashCommand, ctx: Context) -> None:
-    life = cast(Lifespan, ctx.lifespan)
+async def handle_incident_slash_command(
+    event: SlackSlashCommand,
+    ctx: Context,
+    conn: ConnectionDep,
+    life: LifespanDep,
+) -> None:
     tokens = (event.text or "").split()
     try:
         subcommand = Subcommand(tokens[0].lower()) if tokens else None
@@ -203,7 +228,7 @@ async def handle_incident_slash_command(event: SlackSlashCommand, ctx: Context) 
         subcommand = None
 
     if subcommand is Subcommand.ONCALL:
-        await _respond_oncall(life, event.response_url)
+        await _respond_oncall(conn, life.slack, event.response_url)
         return
 
     modal = Modal.for_subcommand(subcommand) if subcommand else None
@@ -216,21 +241,29 @@ async def handle_incident_slash_command(event: SlackSlashCommand, ctx: Context) 
 
 
 @hatchet.task(on_events=["slack:interactivity"], input_validator=InteractivityPayload)
-async def handle_interactivity(payload: InteractivityPayload, ctx: Context) -> None:
+async def handle_interactivity(
+    payload: InteractivityPayload,
+    ctx: Context,
+    conn: ConnectionDep,
+    life: LifespanDep,
+) -> None:
     if payload.type != "view_submission":
         return
     modal = Modal.for_callback(payload.view.callback_id)
     if modal is None:
         logger.warning("unhandled callback_id: %s", payload.view.callback_id)
         return
-    await modal.handle(cast(Lifespan, ctx.lifespan), payload)
+    await modal.handle(conn, life.slack, payload)
 
 
 @hatchet.task(on_crons=["0 6 * * *"], input_validator=EmptyInput)
-async def backfill_members_cron(_: EmptyInput, ctx: Context) -> None:
-    life = cast(Lifespan, ctx.lifespan)
-    async with life.pool.acquire() as conn:
-        upserted, scanned = await backfill(conn, life.slack)
+async def backfill_members_cron(
+    _: EmptyInput,
+    ctx: Context,
+    conn: ConnectionDep,
+    life: LifespanDep,
+) -> None:
+    upserted, scanned = await backfill(conn, life.slack)
     ctx.log(f"backfilled {upserted}/{scanned} members")
 
 

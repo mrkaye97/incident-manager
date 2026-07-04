@@ -1,25 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from datetime import date
-from enum import Enum
 
 from asyncpg import Connection
 from asyncpg.exceptions import ExclusionViolationError
-from slack_sdk.models.views import View
 
 import db
-from slack import (
-    CallbackID,
-    InteractivityPayload,
-    SlackClient,
-    Subcommand,
-    ViewMetadata,
-    add_shift_modal,
-    create_incident_modal,
-    page_member_modal,
-)
+from slack import InteractivityPayload, SlackClient, Subcommand
 
 HELP_TEXT = (
     "*Incident bot commands*\n"
@@ -55,7 +42,7 @@ async def respond_oncall(conn: Connection, slack: SlackClient, response_url: str
     await slack.respond(response_url, f"*Currently on call*\n{lines}")
 
 
-async def _create_incident(
+async def create_incident(
     conn: Connection, slack: SlackClient, payload: InteractivityPayload
 ) -> None:
     channel_id = payload.metadata.channel_id
@@ -74,7 +61,7 @@ async def _create_incident(
     )
 
 
-async def _page_member(conn: Connection, slack: SlackClient, payload: InteractivityPayload) -> None:
+async def page_member(conn: Connection, slack: SlackClient, payload: InteractivityPayload) -> None:
     channel_id = payload.metadata.channel_id
     target = payload.field("target")
     incident_raw = payload.field("incident_id")
@@ -93,7 +80,7 @@ async def _page_member(conn: Connection, slack: SlackClient, payload: Interactiv
     )
 
 
-async def _add_shift(conn: Connection, slack: SlackClient, payload: InteractivityPayload) -> None:
+async def add_shift(conn: Connection, slack: SlackClient, payload: InteractivityPayload) -> None:
     channel_id = payload.metadata.channel_id
     member = payload.field("member")
     start = date.fromisoformat(payload.field("start"))
@@ -116,42 +103,11 @@ async def _add_shift(conn: Connection, slack: SlackClient, payload: Interactivit
     )
 
 
-ModalBuilder = Callable[[ViewMetadata], View]
-ModalHandler = Callable[[Connection, SlackClient, InteractivityPayload], Awaitable[None]]
-
-
-@dataclass
-class ModalAction:
-    subcommand: Subcommand
-    callback_id: CallbackID
-    build: ModalBuilder
-    handle: ModalHandler
-
-
-class Modal(Enum):
-    CREATE = ModalAction(
-        Subcommand.CREATE,
-        CallbackID.CREATE_INCIDENT,
-        create_incident_modal,
-        _create_incident,
-    )
-    PAGE = ModalAction(
-        Subcommand.PAGE,
-        CallbackID.PAGE_MEMBER,
-        page_member_modal,
-        _page_member,
-    )
-    SCHEDULE = ModalAction(
-        Subcommand.SCHEDULE,
-        CallbackID.ADD_SHIFT,
-        add_shift_modal,
-        _add_shift,
-    )
-
-    @classmethod
-    def for_subcommand(cls, subcommand: Subcommand) -> Modal | None:
-        return next((m for m in cls if m.value.subcommand is subcommand), None)
-
-    @classmethod
-    def for_callback(cls, callback_id: str) -> Modal | None:
-        return next((m for m in cls if m.value.callback_id == callback_id), None)
+def parse_subcommand(text: str | None) -> Subcommand | None:
+    tokens = (text or "").split()
+    if not tokens:
+        return None
+    try:
+        return Subcommand(tokens[0].lower())
+    except ValueError:
+        return None

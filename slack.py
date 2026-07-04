@@ -99,6 +99,22 @@ class InteractivityPayload(BaseModel):
         return ViewMetadata.model_validate_json(self.view.private_metadata)
 
 
+class SlackSlashCommand(BaseModel):
+    text: str | None
+    token: str
+    command: str
+    team_id: str
+    user_id: str
+    user_name: str
+    api_app_id: str
+    channel_id: str
+    trigger_id: str
+    team_domain: str
+    channel_name: str
+    response_url: str
+    is_enterprise_install: bool
+
+
 class SlackClient:
     def __init__(self, token: str) -> None:
         self._web = AsyncWebClient(

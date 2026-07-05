@@ -95,7 +95,7 @@ async def create_incident(
     channel_id = await slack.create_channel(_incident_channel_name(name)[:80])
     incident_id = await db.create_incident(conn, name, channel_id, lead_id, None)
 
-    await slack.invite_users(channel_id, list({payload.user.id, lead}))
+    await slack.invite_users(channel_id, {payload.user.id, lead})
 
     await slack.post_message(
         channel_id,

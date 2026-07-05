@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from enum import StrEnum
 from typing import cast
 
@@ -171,12 +172,12 @@ class SlackClient:
 
         return cast(str, response["channel"]["id"])
 
-    async def invite_users(self, channel: str, user_ids: list[str]) -> None:
+    async def invite_users(self, channel: str, user_ids: Iterable[str]) -> None:
         if not user_ids:
             return
 
         try:
-            await self._web.conversations_invite(channel=channel, users=user_ids)
+            await self._web.conversations_invite(channel=channel, users=list(user_ids))
         except SlackApiError as e:
             if e.response.get("error") not in ("already_in_channel", "cant_invite_self"):
                 raise

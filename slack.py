@@ -15,13 +15,17 @@ from slack_sdk.models.blocks import (
     DatePickerElement,
     InputBlock,
     InputInteractiveElement,
+    Option,
     PlainTextInputElement,
+    StaticSelectElement,
     UserMultiSelectElement,
     UserSelectElement,
 )
 from slack_sdk.models.views import View
 from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.webhook.async_client import AsyncWebhookClient
+
+from db import IncidentOption
 
 
 class Subcommand(StrEnum):
@@ -197,6 +201,14 @@ def _user_select() -> UserSelectElement:
     return UserSelectElement(action_id="value")
 
 
+def _incident_select(incidents: list[IncidentOption]) -> StaticSelectElement:
+    return StaticSelectElement(
+        action_id="value",
+        placeholder="Select an incident",
+        options=[Option(text=incident.name, value=str(incident.id)) for incident in incidents],
+    )
+
+
 def _user_multi_select() -> UserMultiSelectElement:
     return UserMultiSelectElement(action_id="value")
 
@@ -239,17 +251,14 @@ def create_incident_modal(metadata: ViewMetadata) -> View:
     )
 
 
-def page_member_modal(metadata: ViewMetadata) -> View:
-    return _modal(
-        CallbackID.PAGE_MEMBER,
-        "Page someone",
-        [
-            _input("target", "Who to page", _user_select()),
-            _input("incident_id", "Incident ID (optional)", _text(), optional=True),
-            _input("reason", "Reason", _text(multiline=True), optional=True),
-        ],
-        metadata,
-    )
+def page_member_modal(metadata: ViewMetadata, incidents: list[IncidentOption]) -> View:
+    blocks = [_input("target", "Who to page", _user_select())]
+    if incidents:
+        blocks.append(
+            _input("incident_id", "Incident (optional)", _incident_select(incidents), optional=True)
+        )
+    blocks.append(_input("reason", "Reason", _text(multiline=True), optional=True))
+    return _modal(CallbackID.PAGE_MEMBER, "Page someone", blocks, metadata)
 
 
 def configure_rotation_modal(metadata: ViewMetadata) -> View:

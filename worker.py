@@ -8,6 +8,7 @@ from asyncpg.pool import PoolConnectionProxy
 from hatchet_sdk import Context, Depends, EmptyModel, Hatchet
 from pydantic import BaseModel
 
+import db
 from commands import (
     HELP_TEXT,
     configure_rotation,
@@ -78,7 +79,10 @@ async def handle_incident_slash_command(
         case Subcommand.CREATE:
             await lifespan.slack.views_open(event.trigger_id, create_incident_modal(metadata))
         case Subcommand.PAGE:
-            await lifespan.slack.views_open(event.trigger_id, page_member_modal(metadata))
+            incidents = await db.list_open_incidents(conn)
+            await lifespan.slack.views_open(
+                event.trigger_id, page_member_modal(metadata, incidents)
+            )
         case Subcommand.SCHEDULE:
             await lifespan.slack.views_open(event.trigger_id, configure_rotation_modal(metadata))
         case _:

@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 
 from asyncpg import Connection
 from pydantic import BaseModel
+
+
+class IncidentStatus(StrEnum):
+    OPEN = "OPEN"
+    RESOLVED = "RESOLVED"
 
 
 class OnCallEntry(BaseModel):
@@ -75,12 +81,45 @@ async def create_incident(
     return row["id"]
 
 
-async def create_page(conn: Connection, team_member_id: int, incident_id: int | None) -> int:
+class IncidentOption(BaseModel):
+    id: int
+    name: str
+    slack_channel_id: str
+
+
+async def list_open_incidents(conn: Connection) -> list[IncidentOption]:
+    rows = await conn.fetch(
+        """
+        SELECT id, name, slack_channel_id
+        FROM incident
+        WHERE status = 'OPEN'
+        ORDER BY start_time DESC
+        """,
+    )
+    return [IncidentOption.model_validate(dict(row)) for row in rows]
+
+
+class Page(BaseModel):
+    id: int
+    incident_id: int | None
+    slack_channel_id: str | None
+
+
+async def create_page(conn: Connection, team_member_id: int, incident_id: int | None) -> Page:
     row = await conn.fetchrow(
         """
-        INSERT INTO page (team_member_id, incident_id)
-        VALUES ($1, $2)
-        RETURNING id
+        WITH page AS (
+            INSERT INTO page (team_member_id, incident_id)
+            VALUES ($1, $2)
+            RETURNING id
+        ), incident AS (
+            SELECT *
+            FROM incident
+            WHERE id = $2
+        )
+
+        SELECT p.id, i.slack_channel_id, i.id AS incident_id
+        FROM page p, incident i
         """,
         team_member_id,
         incident_id,
@@ -89,7 +128,7 @@ async def create_page(conn: Connection, team_member_id: int, incident_id: int | 
     if not row:
         raise UnexpectedDBError(f"Failed to create page for team_member_id {team_member_id}")
 
-    return row["id"]
+    return Page.model_validate(dict(row))
 
 
 async def upsert_rotation(

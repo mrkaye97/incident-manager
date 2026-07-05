@@ -35,12 +35,14 @@ CREATE TABLE IF NOT EXISTS on_call_override (
         EXCLUDE USING GIST (escalation_priority WITH =, shift WITH &&)
 );
 
+CREATE TYPE incident_status AS ENUM ('OPEN', 'RESOLVED');
+
 CREATE TABLE IF NOT EXISTS incident (
     id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     name TEXT NOT NULL,
     slack_channel_id TEXT NOT NULL,
     lead BIGINT NOT NULL REFERENCES team_member(id),
-    status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'RESOLVED')),
+    status incident_status NOT NULL DEFAULT 'OPEN',
     start_time TIMESTAMPTZ NOT NULL DEFAULT now(),
     end_time TIMESTAMPTZ,
     description TEXT,

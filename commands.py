@@ -128,9 +128,9 @@ async def page_member(conn: Connection, slack: SlackClient, payload: Interactivi
     if member_id is None:
         return
 
-    await db.create_page(conn, member_id, incident_id)
+    page = await db.create_page(conn, member_id, incident_id)
 
-    note = f" for incident #{incident_id}" if incident_id else ""
+    note = f" for incident <#{page.slack_channel_id}>" if page.slack_channel_id else ""
     reason = payload.field("reason")
     detail = f" — {reason}" if reason else ""
 

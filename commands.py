@@ -64,6 +64,21 @@ async def respond_oncall(conn: Connection, slack: SlackClient, response_url: str
     await slack.respond(response_url, f"*Currently on call*\n{lines}")
 
 
+async def open_incident(
+    conn: Connection,
+    slack: SlackClient,
+    *,
+    name: str,
+    lead_member_id: int,
+    description: str | None,
+    invite_slack_ids: set[str],
+) -> tuple[int, str]:
+    channel_id = await slack.create_channel(_incident_channel_name(name)[:80])
+    incident_id = await db.create_incident(conn, name, channel_id, lead_member_id, description)
+    await slack.invite_users(channel_id, invite_slack_ids)
+    return incident_id, channel_id
+
+
 async def create_incident(
     conn: Connection, slack: SlackClient, payload: InteractivityPayload
 ) -> None:
@@ -96,10 +111,14 @@ async def create_incident(
     if lead_id is None:
         return
 
-    channel_id = await slack.create_channel(_incident_channel_name(name)[:80])
-    incident_id = await db.create_incident(conn, name, channel_id, lead_id, None)
-
-    await slack.invite_users(channel_id, {payload.user.id, lead})
+    incident_id, channel_id = await open_incident(
+        conn,
+        slack,
+        name=name,
+        lead_member_id=lead_id,
+        description=None,
+        invite_slack_ids={payload.user.id, lead},
+    )
 
     await slack.post_message(
         channel_id,

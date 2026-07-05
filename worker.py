@@ -5,10 +5,16 @@ from typing import Annotated, cast
 
 from asyncpg import Connection, Pool, Record, create_pool
 from asyncpg.pool import PoolConnectionProxy
-from hatchet_sdk import Context, Depends, EmptyModel, Hatchet
+from hatchet_sdk import (
+    Context,
+    Depends,
+    EmptyModel,
+    Hatchet,
+)
 from pydantic import BaseModel
 
 import db
+from alerts import HyperDXAlert, handle_alert
 from commands import (
     HELP_TEXT,
     complete_action_items,
@@ -172,6 +178,20 @@ async def handle_interactivity(
             logger.warning("unhandled callback_id: %s", payload.view.callback_id)
 
 
+@hatchet.task(
+    ## todo: idempotency here, probably?
+    on_events=["hyperdx:alert"],
+    input_validator=HyperDXAlert,
+)
+async def handle_critical_alert(
+    alert: HyperDXAlert,
+    _ctx: Context,
+    conn: ConnectionDep,
+    lifespan: LifespanDep,
+) -> None:
+    await handle_alert(conn, lifespan.slack, alert)
+
+
 @hatchet.task(on_crons=["0 6 * * *"])
 async def backfill_members(
     _: EmptyModel,
@@ -198,6 +218,7 @@ def main() -> None:
         workflows=[
             handle_incident_slash_command,
             handle_interactivity,
+            handle_critical_alert,
             backfill_members,
         ],
         lifespan=lifespan,

@@ -68,3 +68,15 @@ CREATE TABLE IF NOT EXISTS incident_action_item (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS alert (
+    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    title TEXT NOT NULL,
+    state TEXT,
+    body TEXT,
+    source_url TEXT,
+    incident_id BIGINT REFERENCES incident(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS alert_title_idx ON alert (title);

@@ -108,6 +108,48 @@ async def find_open_incident_by_channel_id(
     return Incident.model_validate(dict(row)) if row else None
 
 
+async def find_open_incident_by_alert_title(conn: Connection, title: str) -> Incident | None:
+    row = await conn.fetchrow(
+        """
+        SELECT i.id, i.name, i.slack_channel_id, i.description
+        FROM incident i
+        JOIN alert a ON a.incident_id = i.id
+        WHERE a.title = $1 AND i.status = 'OPEN'
+        ORDER BY i.start_time DESC
+        LIMIT 1
+        """,
+        title,
+    )
+    return Incident.model_validate(dict(row)) if row else None
+
+
+async def record_alert(
+    conn: Connection,
+    title: str,
+    state: str | None,
+    body: str | None,
+    source_url: str | None,
+    incident_id: int | None,
+) -> int:
+    row = await conn.fetchrow(
+        """
+        INSERT INTO alert (title, state, body, source_url, incident_id)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id
+        """,
+        title,
+        state,
+        body,
+        source_url,
+        incident_id,
+    )
+
+    if not row:
+        raise UnexpectedDBError(f"Failed to record alert with title {title}")
+
+    return row["id"]
+
+
 async def update_incident_description(conn: Connection, incident_id: int, description: str) -> None:
     await conn.execute(
         """

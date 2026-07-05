@@ -7,6 +7,12 @@ from asyncpg import Connection
 import db
 from slack import InteractivityPayload, SlackClient, Subcommand
 
+# NOTE: mentions are rendered non-pinging during testing so nobody gets tagged.
+# Restore the body to `f"<@{user_id}>"` to re-enable real @-mentions.
+def mention(user_id: str) -> str:
+    return f"`@{user_id}`"
+
+
 HELP_TEXT = (
     "*Incident bot commands*\n"
     "• `create` — open an incident\n"
@@ -23,7 +29,7 @@ async def _require_member(
     if member_id is None:
         await slack.post_message(
             channel_id,
-            f":warning: <@{slack_user_id}> isn't on the team roster — "
+            f":warning: {mention(slack_user_id)} isn't on the team roster — "
             "add them to @eng and re-run the backfill.",
         )
     return member_id
@@ -35,7 +41,7 @@ async def respond_oncall(conn: Connection, slack: SlackClient, response_url: str
         await slack.respond(response_url, "Nobody is currently on call.")
         return
     lines = "\n".join(
-        f"• P{r.escalation_priority}: " + (f"<@{r.slack_user_id}>" if r.slack_user_id else r.name)
+        f"• P{r.escalation_priority}: " + (mention(r.slack_user_id) if r.slack_user_id else r.name)
         for r in oncall
     )
     await slack.respond(response_url, f"*Currently on call*\n{lines}")
@@ -56,7 +62,7 @@ async def create_incident(
     await slack.post_message(
         channel_id,
         f":rotating_light: Incident #{incident_id} *{name}* opened by "
-        f"<@{payload.user.id}> — lead <@{lead}>.",
+        f"{mention(payload.user.id)} — lead {mention(lead)}.",
     )
 
 
@@ -75,7 +81,7 @@ async def page_member(conn: Connection, slack: SlackClient, payload: Interactivi
     detail = f" — {reason}" if reason else ""
     await slack.post_message(
         channel_id,
-        f":pager: <@{target}> you've been paged by <@{payload.user.id}>{note}{detail}",
+        f":pager: {mention(target)} you've been paged by {mention(payload.user.id)}{note}{detail}",
     )
 
 
@@ -90,7 +96,7 @@ async def configure_rotation(
     if not raw_period.strip().isdigit() or int(raw_period) < 1:
         await slack.post_message(
             channel_id,
-            f":warning: <@{payload.user.id}> days per person must be a positive whole number.",
+            f":warning: {mention(payload.user.id)} days per person must be a positive whole number.",
         )
         return
     period_days = int(raw_period)
@@ -104,14 +110,14 @@ async def configure_rotation(
     if not member_ids:
         await slack.post_message(
             channel_id,
-            f":warning: <@{payload.user.id}> a rotation needs at least one member.",
+            f":warning: {mention(payload.user.id)} a rotation needs at least one member.",
         )
         return
 
     await db.upsert_rotation(conn, member_ids, period_days, anchor)
 
     levels = min(db.ESCALATION_LEVELS, len(member_ids))
-    order = " → ".join(f"<@{u}>" for u in members)
+    order = " → ".join(mention(u) for u in members)
     await slack.post_message(
         channel_id,
         f":calendar: On-call rotation configured: {order}, rotating every "

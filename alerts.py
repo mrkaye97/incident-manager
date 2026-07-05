@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from asyncpg import Connection
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 import db
 from commands import mention, open_incident
@@ -12,6 +13,9 @@ from slack import SlackClient
 logger = logging.getLogger("incident-bot")
 
 FIRING_STATE = "ALERT"
+
+LINES_FOUND_RE = re.compile(r"\s*-\s*\d+\s+lines?\s+found\s*$", re.IGNORECASE)
+EMPTY_CODE_BLOCK_RE = re.compile(r"```\s*```")
 
 
 class HyperDXAlert(BaseModel):
@@ -22,6 +26,20 @@ class HyperDXAlert(BaseModel):
     link: str | None = None
     start_time: str | None = None
     end_time: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _normalize_title(cls, value: str) -> str:
+        return LINES_FOUND_RE.sub("", value).strip()
+
+    @field_validator("body")
+    @classmethod
+    def _clean_body(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = EMPTY_CODE_BLOCK_RE.sub("", value)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+        return cleaned or None
 
 
 def _link(alert: HyperDXAlert) -> str:

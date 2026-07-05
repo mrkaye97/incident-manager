@@ -11,11 +11,13 @@ from pydantic import BaseModel
 import db
 from commands import (
     HELP_TEXT,
+    complete_action_items,
     configure_rotation,
     create_action_item,
     create_incident,
     page_member,
     parse_subcommand,
+    resolve_incident,
     respond_oncall,
     update_description,
 )
@@ -28,6 +30,7 @@ from slack import (
     SlackSlashCommand,
     Subcommand,
     ViewMetadata,
+    complete_action_items_modal,
     configure_rotation_modal,
     create_action_item_modal,
     create_incident_modal,
@@ -111,6 +114,33 @@ async def handle_incident_slash_command(
                 return
             metadata.incident_id = incident.id
             await lifespan.slack.views_open(event.trigger_id, create_action_item_modal(metadata))
+        case Subcommand.RESOLVE:
+            incident = await db.find_open_incident_by_channel_id(conn, event.channel_id)
+            if incident is None:
+                await lifespan.slack.respond(
+                    event.response_url,
+                    "Run `resolve` from an open incident's channel to resolve it.",
+                )
+                return
+            await resolve_incident(conn, lifespan.slack, incident, event.user_id)
+        case Subcommand.COMPLETE:
+            incident = await db.find_open_incident_by_channel_id(conn, event.channel_id)
+            if incident is None:
+                await lifespan.slack.respond(
+                    event.response_url,
+                    "Run `complete` from an open incident's channel to complete action items.",
+                )
+                return
+            items = await db.list_open_action_items(conn, incident.id)
+            if not items:
+                await lifespan.slack.respond(
+                    event.response_url, "This incident has no open action items."
+                )
+                return
+            metadata.incident_id = incident.id
+            await lifespan.slack.views_open(
+                event.trigger_id, complete_action_items_modal(metadata, items)
+            )
         case _:
             await lifespan.slack.respond(event.response_url, HELP_TEXT)
 
@@ -136,6 +166,8 @@ async def handle_interactivity(
             await update_description(conn, lifespan.slack, payload)
         case CallbackID.CREATE_ACTION_ITEM:
             await create_action_item(conn, lifespan.slack, payload)
+        case CallbackID.COMPLETE_ACTION_ITEMS:
+            await complete_action_items(conn, lifespan.slack, payload)
         case _:
             logger.warning("unhandled callback_id: %s", payload.view.callback_id)
 

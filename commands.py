@@ -28,7 +28,9 @@ HELP_TEXT = (
     "• `oncall` — show who is currently on call\n"
     "• `schedule` — configure a recurring on-call rotation\n"
     "• `update` — update the current incident's description (run in an incident channel)\n"
-    "• `action` — add an action item to the current incident (run in an incident channel)"
+    "• `action` — add an action item to the current incident (run in an incident channel)\n"
+    "• `complete` — mark action items complete (run in an incident channel)\n"
+    "• `resolve` — resolve the current incident (run in an incident channel)"
 )
 
 
@@ -208,6 +210,41 @@ async def create_action_item(
     await slack.post_message(
         channel_id,
         f":white_check_mark: {mention(payload.user.id)} added an action item: {description}{owner}",
+    )
+
+
+async def resolve_incident(
+    conn: Connection, slack: SlackClient, incident: db.Incident, actor_slack_id: str
+) -> None:
+    await db.resolve_incident(conn, incident.id)
+
+    open_items = await db.list_open_action_items(conn, incident.id)
+    note = f" {len(open_items)} action item(s) still open." if open_items else ""
+
+    await slack.post_message(
+        incident.slack_channel_id,
+        f":checkered_flag: {mention(actor_slack_id)} resolved incident *{incident.name}*.{note}",
+    )
+
+
+async def complete_action_items(
+    conn: Connection, slack: SlackClient, payload: InteractivityPayload
+) -> None:
+    channel_id = payload.metadata.channel_id
+    ids = [int(v) for v in payload.options("items") if v.isdigit()]
+
+    if not ids:
+        await slack.post_message(
+            channel_id,
+            f":warning: {mention(payload.user.id)} pick at least one action item to complete.",
+        )
+        return
+
+    completed = await db.complete_action_items(conn, ids)
+
+    await slack.post_message(
+        channel_id,
+        f":white_check_mark: {mention(payload.user.id)} completed {completed} action item(s).",
     )
 
 

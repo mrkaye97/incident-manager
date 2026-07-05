@@ -120,6 +120,48 @@ async def update_incident_description(conn: Connection, incident_id: int, descri
     )
 
 
+async def resolve_incident(conn: Connection, incident_id: int) -> None:
+    await conn.execute(
+        """
+        UPDATE incident
+        SET status = 'RESOLVED', end_time = now(), updated_at = now()
+        WHERE id = $1 AND status = 'OPEN'
+        """,
+        incident_id,
+    )
+
+
+class ActionItemOption(BaseModel):
+    id: int
+    description: str
+
+
+async def list_open_action_items(conn: Connection, incident_id: int) -> list[ActionItemOption]:
+    rows = await conn.fetch(
+        """
+        SELECT id, description
+        FROM incident_action_item
+        WHERE incident_id = $1 AND is_completed = FALSE
+        ORDER BY created_at
+        """,
+        incident_id,
+    )
+    return [ActionItemOption.model_validate(dict(row)) for row in rows]
+
+
+async def complete_action_items(conn: Connection, action_item_ids: list[int]) -> int:
+    rows = await conn.fetch(
+        """
+        UPDATE incident_action_item
+        SET is_completed = TRUE, updated_at = now()
+        WHERE id = ANY($1::BIGINT[]) AND is_completed = FALSE
+        RETURNING id
+        """,
+        action_item_ids,
+    )
+    return len(rows)
+
+
 async def create_action_item(
     conn: Connection, incident_id: int, description: str, assignee_member_id: int | None
 ) -> int:

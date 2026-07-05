@@ -12,6 +12,7 @@ from slack_sdk.http_retry.builtin_async_handlers import (
 )
 from slack_sdk.models.blocks import (
     Block,
+    CheckboxesElement,
     DatePickerElement,
     InputBlock,
     InputInteractiveElement,
@@ -25,7 +26,7 @@ from slack_sdk.models.views import View
 from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.webhook.async_client import AsyncWebhookClient
 
-from db import IncidentOption
+from db import ActionItemOption, IncidentOption
 
 
 class Subcommand(StrEnum):
@@ -35,6 +36,8 @@ class Subcommand(StrEnum):
     SCHEDULE = "schedule"
     UPDATE = "update"
     ACTION = "action"
+    RESOLVE = "resolve"
+    COMPLETE = "complete"
 
 
 class CallbackID(StrEnum):
@@ -43,6 +46,7 @@ class CallbackID(StrEnum):
     CONFIGURE_ROTATION = "configure_rotation"
     UPDATE_DESCRIPTION = "update_description"
     CREATE_ACTION_ITEM = "create_action_item"
+    COMPLETE_ACTION_ITEMS = "complete_action_items"
 
 
 class SlackProfile(BaseModel):
@@ -84,6 +88,7 @@ class SlackStateElement(BaseModel):
     selected_date: str | None = None
     selected_option: SlackOption | None = None
     selected_users: list[str] = Field(default_factory=list)
+    selected_options: list[SlackOption] = Field(default_factory=list)
 
 
 class SlackViewState(BaseModel):
@@ -124,6 +129,10 @@ class InteractivityPayload(BaseModel):
     def users(self, block: str, action: str = "value") -> list[str]:
         el = self.view.state.values.get(block, {}).get(action)
         return el.selected_users if el is not None else []
+
+    def options(self, block: str, action: str = "value") -> list[str]:
+        el = self.view.state.values.get(block, {}).get(action)
+        return [o.value for o in el.selected_options] if el is not None else []
 
     @property
     def metadata(self) -> ViewMetadata:
@@ -222,6 +231,13 @@ def _datepicker() -> DatePickerElement:
     return DatePickerElement(action_id="value")
 
 
+def _action_item_checkboxes(items: list[ActionItemOption]) -> CheckboxesElement:
+    return CheckboxesElement(
+        action_id="value",
+        options=[Option(text=item.description[:75], value=str(item.id)) for item in items],
+    )
+
+
 def _input(
     block_id: str, label: str, element: InputInteractiveElement, *, optional: bool = False
 ) -> InputBlock:
@@ -283,6 +299,15 @@ def create_action_item_modal(metadata: ViewMetadata) -> View:
             _input("description", "Action item", _text(multiline=True)),
             _input("assignee", "Assignee", _user_select(), optional=True),
         ],
+        metadata,
+    )
+
+
+def complete_action_items_modal(metadata: ViewMetadata, items: list[ActionItemOption]) -> View:
+    return _modal(
+        CallbackID.COMPLETE_ACTION_ITEMS,
+        "Complete action items",
+        [_input("items", "Mark as complete", _action_item_checkboxes(items))],
         metadata,
     )
 

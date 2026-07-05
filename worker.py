@@ -182,6 +182,7 @@ async def handle_interactivity(
     ## todo: idempotency here, probably?
     on_events=["hyperdx:alert"],
     input_validator=HyperDXAlert,
+    concurrency=1,
 )
 async def handle_critical_alert(
     alert: HyperDXAlert,

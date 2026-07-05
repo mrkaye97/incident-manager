@@ -55,7 +55,7 @@ async def connection(
     _i: Any,
     ctx: Context,
     lifespan: LifespanDep,
-) -> AsyncGenerator[PoolConnectionProxy[Record], None]:
+) -> "AsyncGenerator[PoolConnectionProxy[Record], None]":
     async with lifespan.pool.acquire() as conn, conn.transaction():
         yield conn
 

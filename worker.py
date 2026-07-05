@@ -1,11 +1,12 @@
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Annotated, Any, cast
+from typing import Annotated, cast
 
 from asyncpg import Connection, Pool, Record, create_pool
 from asyncpg.pool import PoolConnectionProxy
 from hatchet_sdk import Context, Depends, EmptyModel, Hatchet
+from pydantic import BaseModel
 
 from commands import (
     HELP_TEXT,
@@ -41,7 +42,7 @@ class Lifespan:
 
 
 def lifespan_dep(
-    _i: Any,
+    _i: BaseModel,
     ctx: Context,
 ) -> Lifespan:
     return cast(Lifespan, ctx.lifespan)
@@ -52,7 +53,7 @@ LifespanDep = Annotated[Lifespan, Depends(lifespan_dep)]
 
 @asynccontextmanager
 async def connection(
-    _i: Any,
+    _i: BaseModel,
     ctx: Context,
     lifespan: LifespanDep,
 ) -> "AsyncGenerator[PoolConnectionProxy[Record], None]":
@@ -112,8 +113,7 @@ async def backfill_members(
     conn: ConnectionDep,
     lifespan: LifespanDep,
 ) -> None:
-    upserted, scanned = await backfill(conn, lifespan.slack)
-    ctx.log(f"backfilled {upserted}/{scanned} members")
+    await backfill(conn, lifespan.slack)
 
 
 async def lifespan() -> AsyncGenerator[Lifespan, None]:

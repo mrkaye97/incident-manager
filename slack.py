@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import cast
 
 from pydantic import BaseModel, Field
+from slack_sdk.errors import SlackApiError
 from slack_sdk.http_retry.builtin_async_handlers import (
     AsyncConnectionErrorRetryHandler,
     AsyncRateLimitErrorRetryHandler,
@@ -63,8 +64,20 @@ class ViewMetadata(BaseModel):
     user_id: str
 
 
+class SlackOption(BaseModel):
+    value: str
+
+
+class SlackStateElement(BaseModel):
+    value: str | None = None
+    selected_user: str | None = None
+    selected_date: str | None = None
+    selected_option: SlackOption | None = None
+    selected_users: list[str] = Field(default_factory=list)
+
+
 class SlackViewState(BaseModel):
-    values: dict[str, dict[str, dict[str, Any]]]
+    values: dict[str, dict[str, SlackStateElement]]
 
 
 class SlackView(BaseModel):
@@ -84,18 +97,23 @@ class InteractivityPayload(BaseModel):
     user: SlackActor
     view: SlackView
 
-    def field(self, block: str, action: str = "value") -> Any:
-        el = self.view.state.values.get(block, {}).get(action, {})
-        for key in ("value", "selected_user", "selected_date"):
-            if key in el:
-                return el[key]
-        if option := el.get("selected_option"):
-            return option["value"]
+    def field(self, block: str, action: str = "value") -> str | None:
+        el = self.view.state.values.get(block, {}).get(action)
+        if el is None:
+            return None
+        if el.value is not None:
+            return el.value
+        if el.selected_user is not None:
+            return el.selected_user
+        if el.selected_date is not None:
+            return el.selected_date
+        if el.selected_option is not None:
+            return el.selected_option.value
         return None
 
     def users(self, block: str, action: str = "value") -> list[str]:
-        el = self.view.state.values.get(block, {}).get(action, {})
-        return el.get("selected_users", [])
+        el = self.view.state.values.get(block, {}).get(action)
+        return el.selected_users if el is not None else []
 
     @property
     def metadata(self) -> ViewMetadata:
@@ -148,6 +166,21 @@ class SlackClient:
     async def views_open(self, trigger_id: str, view: View) -> None:
         await self._web.views_open(trigger_id=trigger_id, view=view)
 
+    async def create_channel(self, name: str) -> str:
+        response = await self._web.conversations_create(name=name)
+
+        return cast(str, response["channel"]["id"])
+
+    async def invite_users(self, channel: str, user_ids: list[str]) -> None:
+        if not user_ids:
+            return
+
+        try:
+            await self._web.conversations_invite(channel=channel, users=user_ids)
+        except SlackApiError as e:
+            if e.response.get("error") not in ("already_in_channel", "cant_invite_self"):
+                raise
+
     async def post_message(self, channel: str, text: str) -> None:
         await self._web.chat_postMessage(channel=channel, text=text)
 
@@ -197,8 +230,9 @@ def create_incident_modal(metadata: ViewMetadata) -> View:
         "Create incident",
         [
             _input("name", "Name", _text()),
-            _input("lead", "Incident lead", _user_select()),
-            _input("description", "Description", _text(multiline=True), optional=True),
+            _input(
+                "lead", "Incident lead (defaults to current on-call)", _user_select(), optional=True
+            ),
         ],
         metadata,
     )

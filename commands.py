@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime, time
 
 from asyncpg import Connection
-from asyncpg.exceptions import ExclusionViolationError
 
 import db
 from slack import InteractivityPayload, SlackClient, Subcommand
@@ -13,7 +12,7 @@ HELP_TEXT = (
     "• `create` — open an incident\n"
     "• `page` — page a team member\n"
     "• `oncall` — show who is currently on call\n"
-    "• `schedule` — add an on-call shift"
+    "• `schedule` — configure a recurring on-call rotation"
 )
 
 
@@ -80,26 +79,44 @@ async def page_member(conn: Connection, slack: SlackClient, payload: Interactivi
     )
 
 
-async def add_shift(conn: Connection, slack: SlackClient, payload: InteractivityPayload) -> None:
+async def configure_rotation(
+    conn: Connection, slack: SlackClient, payload: InteractivityPayload
+) -> None:
     channel_id = payload.metadata.channel_id
-    member = payload.field("member")
-    start = date.fromisoformat(payload.field("start"))
-    end = date.fromisoformat(payload.field("end"))
-    priority = int(payload.field("escalation_priority"))
-    member_id = await _require_member(conn, slack, channel_id, member)
-    if member_id is None:
-        return
-    try:
-        await db.add_shift(conn, member_id, start, end, priority)
-    except ExclusionViolationError:
+    members = payload.users("members")
+    anchor = datetime.combine(date.fromisoformat(payload.field("start")), time.min, tzinfo=UTC)
+
+    raw_period = payload.field("period_days") or ""
+    if not raw_period.strip().isdigit() or int(raw_period) < 1:
         await slack.post_message(
             channel_id,
-            f":warning: <@{payload.user.id}> that P{priority} shift overlaps an existing one.",
+            f":warning: <@{payload.user.id}> days per person must be a positive whole number.",
         )
         return
+    period_days = int(raw_period)
+
+    member_ids: list[int] = []
+    for slack_user_id in members:
+        member_id = await _require_member(conn, slack, channel_id, slack_user_id)
+        if member_id is None:
+            return
+        member_ids.append(member_id)
+    if not member_ids:
+        await slack.post_message(
+            channel_id,
+            f":warning: <@{payload.user.id}> a rotation needs at least one member.",
+        )
+        return
+
+    await db.upsert_rotation(conn, member_ids, period_days, anchor)
+
+    levels = min(db.ESCALATION_LEVELS, len(member_ids))
+    order = " → ".join(f"<@{u}>" for u in members)
     await slack.post_message(
         channel_id,
-        f":calendar: <@{member}> is on call at P{priority} from {start} to {end}.",
+        f":calendar: On-call rotation configured: {order}, rotating every "
+        f"{period_days} day(s) from {anchor.date()}. Each shift stacks {levels} level(s) "
+        f"(P1–P{levels}).",
     )
 
 

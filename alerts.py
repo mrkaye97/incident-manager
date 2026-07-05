@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from enum import StrEnum
 
 from asyncpg import Connection
 from pydantic import BaseModel, field_validator
@@ -12,16 +13,22 @@ from slack import SlackClient
 
 logger = logging.getLogger("incident-bot")
 
-FIRING_STATE = "ALERT"
 
 LINES_FOUND_RE = re.compile(r"\s*-\s*\d+\s+lines?\s+found\s*$", re.IGNORECASE)
 EMPTY_CODE_BLOCK_RE = re.compile(r"```\s*```")
 
 
+class AlertState(StrEnum):
+    ALERT = "ALERT"
+    OK = "OK"
+    INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
+    DISABLED = "DISABLED"
+
+
 class HyperDXAlert(BaseModel):
     title: str
     body: str | None = None
-    state: str | None = None
+    state: AlertState | None = None
     event_id: str | None = None
     link: str | None = None
     start_time: str | None = None
@@ -61,7 +68,7 @@ async def handle_alert(conn: Connection, slack: SlackClient, alert: HyperDXAlert
 
     existing = await db.find_open_incident_by_alert_title(conn, alert.title)
 
-    if alert.state != FIRING_STATE:
+    if alert.state != AlertState.ALERT:
         # Not an active firing (OK / INSUFFICIENT_DATA / test). Note it on an open incident
         # if we have one, but never open or page off a non-firing state.
         if existing is not None:

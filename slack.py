@@ -33,12 +33,16 @@ class Subcommand(StrEnum):
     PAGE = "page"
     ONCALL = "oncall"
     SCHEDULE = "schedule"
+    UPDATE = "update"
+    ACTION = "action"
 
 
 class CallbackID(StrEnum):
     CREATE_INCIDENT = "create_incident"
     PAGE_MEMBER = "page_member"
     CONFIGURE_ROTATION = "configure_rotation"
+    UPDATE_DESCRIPTION = "update_description"
+    CREATE_ACTION_ITEM = "create_action_item"
 
 
 class SlackProfile(BaseModel):
@@ -67,6 +71,7 @@ class SlackMember(BaseModel):
 class ViewMetadata(BaseModel):
     channel_id: str
     user_id: str
+    incident_id: int | None = None
 
 
 class SlackOption(BaseModel):
@@ -193,8 +198,8 @@ class SlackClient:
         await AsyncWebhookClient(response_url).send(response_type="ephemeral", text=text)
 
 
-def _text(*, multiline: bool = False) -> PlainTextInputElement:
-    return PlainTextInputElement(action_id="value", multiline=multiline)
+def _text(*, multiline: bool = False, initial: str | None = None) -> PlainTextInputElement:
+    return PlainTextInputElement(action_id="value", multiline=multiline, initial_value=initial)
 
 
 def _user_select() -> UserSelectElement:
@@ -259,6 +264,27 @@ def page_member_modal(metadata: ViewMetadata, incidents: list[IncidentOption]) -
         )
     blocks.append(_input("reason", "Reason", _text(multiline=True), optional=True))
     return _modal(CallbackID.PAGE_MEMBER, "Page someone", blocks, metadata)
+
+
+def update_description_modal(metadata: ViewMetadata, current: str | None) -> View:
+    return _modal(
+        CallbackID.UPDATE_DESCRIPTION,
+        "Update description",
+        [_input("description", "Description", _text(multiline=True, initial=current))],
+        metadata,
+    )
+
+
+def create_action_item_modal(metadata: ViewMetadata) -> View:
+    return _modal(
+        CallbackID.CREATE_ACTION_ITEM,
+        "Add action item",
+        [
+            _input("description", "Action item", _text(multiline=True)),
+            _input("assignee", "Assignee", _user_select(), optional=True),
+        ],
+        metadata,
+    )
 
 
 def configure_rotation_modal(metadata: ViewMetadata) -> View:

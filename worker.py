@@ -12,10 +12,12 @@ import db
 from commands import (
     HELP_TEXT,
     configure_rotation,
+    create_action_item,
     create_incident,
     page_member,
     parse_subcommand,
     respond_oncall,
+    update_description,
 )
 from members import backfill
 from settings import Settings
@@ -27,8 +29,10 @@ from slack import (
     Subcommand,
     ViewMetadata,
     configure_rotation_modal,
+    create_action_item_modal,
     create_incident_modal,
     page_member_modal,
+    update_description_modal,
 )
 
 logger = logging.getLogger("incident-bot")
@@ -85,6 +89,28 @@ async def handle_incident_slash_command(
             )
         case Subcommand.SCHEDULE:
             await lifespan.slack.views_open(event.trigger_id, configure_rotation_modal(metadata))
+        case Subcommand.UPDATE:
+            incident = await db.find_open_incident_by_channel_id(conn, event.channel_id)
+            if incident is None:
+                await lifespan.slack.respond(
+                    event.response_url,
+                    "Run `update` from an open incident's channel to update its description.",
+                )
+                return
+            metadata.incident_id = incident.id
+            await lifespan.slack.views_open(
+                event.trigger_id, update_description_modal(metadata, incident.description)
+            )
+        case Subcommand.ACTION:
+            incident = await db.find_open_incident_by_channel_id(conn, event.channel_id)
+            if incident is None:
+                await lifespan.slack.respond(
+                    event.response_url,
+                    "Run `action` from an open incident's channel to add an action item.",
+                )
+                return
+            metadata.incident_id = incident.id
+            await lifespan.slack.views_open(event.trigger_id, create_action_item_modal(metadata))
         case _:
             await lifespan.slack.respond(event.response_url, HELP_TEXT)
 
@@ -106,6 +132,10 @@ async def handle_interactivity(
             await page_member(conn, lifespan.slack, payload)
         case CallbackID.CONFIGURE_ROTATION:
             await configure_rotation(conn, lifespan.slack, payload)
+        case CallbackID.UPDATE_DESCRIPTION:
+            await update_description(conn, lifespan.slack, payload)
+        case CallbackID.CREATE_ACTION_ITEM:
+            await create_action_item(conn, lifespan.slack, payload)
         case _:
             logger.warning("unhandled callback_id: %s", payload.view.callback_id)
 

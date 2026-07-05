@@ -87,6 +87,59 @@ class IncidentOption(BaseModel):
     slack_channel_id: str
 
 
+class Incident(BaseModel):
+    id: int
+    name: str
+    slack_channel_id: str
+    description: str | None
+
+
+async def find_open_incident_by_channel_id(
+    conn: Connection, slack_channel_id: str
+) -> Incident | None:
+    row = await conn.fetchrow(
+        """
+        SELECT id, name, slack_channel_id, description
+        FROM incident
+        WHERE slack_channel_id = $1 AND status = 'OPEN'
+        """,
+        slack_channel_id,
+    )
+    return Incident.model_validate(dict(row)) if row else None
+
+
+async def update_incident_description(conn: Connection, incident_id: int, description: str) -> None:
+    await conn.execute(
+        """
+        UPDATE incident
+        SET description = $2, updated_at = now()
+        WHERE id = $1
+        """,
+        incident_id,
+        description,
+    )
+
+
+async def create_action_item(
+    conn: Connection, incident_id: int, description: str, assignee_member_id: int | None
+) -> int:
+    row = await conn.fetchrow(
+        """
+        INSERT INTO incident_action_item (incident_id, description, assignee_team_member_id)
+        VALUES ($1, $2, $3)
+        RETURNING id
+        """,
+        incident_id,
+        description,
+        assignee_member_id,
+    )
+
+    if not row:
+        raise UnexpectedDBError(f"Failed to create action item for incident {incident_id}")
+
+    return row["id"]
+
+
 async def list_open_incidents(conn: Connection) -> list[IncidentOption]:
     rows = await conn.fetch(
         """

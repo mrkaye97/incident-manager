@@ -26,7 +26,9 @@ HELP_TEXT = (
     "• `create` — open an incident\n"
     "• `page` — page a team member\n"
     "• `oncall` — show who is currently on call\n"
-    "• `schedule` — configure a recurring on-call rotation"
+    "• `schedule` — configure a recurring on-call rotation\n"
+    "• `update` — update the current incident's description (run in an incident channel)\n"
+    "• `action` — add an action item to the current incident (run in an incident channel)"
 )
 
 
@@ -137,6 +139,75 @@ async def page_member(conn: Connection, slack: SlackClient, payload: Interactivi
     await slack.post_message(
         channel_id,
         f":pager: {mention(target)} you've been paged by {mention(payload.user.id)}{note}{detail}",
+    )
+
+
+async def update_description(
+    conn: Connection, slack: SlackClient, payload: InteractivityPayload
+) -> None:
+    channel_id = payload.metadata.channel_id
+    incident_id = payload.metadata.incident_id
+
+    if incident_id is None:
+        await slack.post_message(
+            channel_id,
+            f":warning: {mention(payload.user.id)} couldn't tell which incident to update.",
+        )
+        return
+
+    description = payload.field("description")
+
+    if not description:
+        await slack.post_message(
+            channel_id,
+            f":warning: {mention(payload.user.id)} a description is required.",
+        )
+        return
+
+    await db.update_incident_description(conn, incident_id, description)
+
+    await slack.post_message(
+        channel_id,
+        f":pencil: {mention(payload.user.id)} updated the incident description:\n{description}",
+    )
+
+
+async def create_action_item(
+    conn: Connection, slack: SlackClient, payload: InteractivityPayload
+) -> None:
+    channel_id = payload.metadata.channel_id
+    incident_id = payload.metadata.incident_id
+
+    if incident_id is None:
+        await slack.post_message(
+            channel_id,
+            f":warning: {mention(payload.user.id)} couldn't tell which incident this is for.",
+        )
+        return
+
+    description = payload.field("description")
+
+    if not description:
+        await slack.post_message(
+            channel_id,
+            f":warning: {mention(payload.user.id)} an action item description is required.",
+        )
+        return
+
+    assignee = payload.field("assignee")
+    assignee_id = None
+
+    if assignee:
+        assignee_id = await _require_member(conn, slack, channel_id, assignee)
+        if assignee_id is None:
+            return
+
+    await db.create_action_item(conn, incident_id, description, assignee_id)
+
+    owner = f" — owner {mention(assignee)}" if assignee else ""
+    await slack.post_message(
+        channel_id,
+        f":white_check_mark: {mention(payload.user.id)} added an action item: {description}{owner}",
     )
 
 

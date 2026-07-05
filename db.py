@@ -118,7 +118,7 @@ async def upsert_rotation(
     if not row:
         raise UnexpectedDBError("Failed to upsert on-call rotation")
 
-    return Rotation.model_validate(row, from_attributes=True)
+    return Rotation.model_validate(dict(row))
 
 
 async def current_oncall(conn: Connection) -> list[OnCallEntry]:
@@ -166,4 +166,4 @@ async def current_oncall(conn: Connection) -> list[OnCallEntry]:
         ESCALATION_LEVELS,
     )
 
-    return [OnCallEntry.model_validate(r, from_attributes=True) for r in rows]
+    return [OnCallEntry.model_validate(dict(r)) for r in rows]

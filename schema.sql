@@ -4,19 +4,34 @@ CREATE TABLE IF NOT EXISTS team_member (
     id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     name TEXT NOT NULL,
     slack_user_id TEXT UNIQUE,
-    slack_handle TEXT
+    slack_handle TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TYPE timerange AS RANGE (
     SUBTYPE = TIMESTAMPTZ
 );
 
-CREATE TABLE IF NOT EXISTS on_call_shift (
+CREATE TABLE IF NOT EXISTS on_call_rotation (
+    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    name TEXT NOT NULL UNIQUE,
+    member_ids BIGINT[] NOT NULL,
+    period_days INTEGER NOT NULL CHECK (period_days > 0),
+    anchor TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT rotation_members_nonempty CHECK (array_length(member_ids, 1) >= 1)
+);
+
+CREATE TABLE IF NOT EXISTS on_call_override (
     id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     team_member_id BIGINT NOT NULL REFERENCES team_member(id),
     shift timerange NOT NULL,
     escalation_priority INTEGER NOT NULL,
-    CONSTRAINT on_call_shift_escalation_priority_shift_exclusion_constraint
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT on_call_override_escalation_priority_shift_exclusion_constraint
         EXCLUDE USING GIST (escalation_priority WITH =, shift WITH &&)
 );
 
@@ -28,12 +43,16 @@ CREATE TABLE IF NOT EXISTS incident (
     status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'RESOLVED')),
     start_time TIMESTAMPTZ NOT NULL DEFAULT now(),
     end_time TIMESTAMPTZ,
-    description TEXT
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS page (
     id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     incident_id BIGINT REFERENCES incident(id),
     team_member_id BIGINT NOT NULL REFERENCES team_member(id),
-    paged_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    paged_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

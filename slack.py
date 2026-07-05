@@ -13,9 +13,8 @@ from slack_sdk.models.blocks import (
     DatePickerElement,
     InputBlock,
     InputInteractiveElement,
-    Option,
     PlainTextInputElement,
-    StaticSelectElement,
+    UserMultiSelectElement,
     UserSelectElement,
 )
 from slack_sdk.models.views import View
@@ -33,7 +32,7 @@ class Subcommand(StrEnum):
 class CallbackID(StrEnum):
     CREATE_INCIDENT = "create_incident"
     PAGE_MEMBER = "page_member"
-    ADD_SHIFT = "add_shift"
+    CONFIGURE_ROTATION = "configure_rotation"
 
 
 class SlackProfile(BaseModel):
@@ -93,6 +92,10 @@ class InteractivityPayload(BaseModel):
         if option := el.get("selected_option"):
             return option["value"]
         return None
+
+    def users(self, block: str, action: str = "value") -> list[str]:
+        el = self.view.state.values.get(block, {}).get(action, {})
+        return el.get("selected_users", [])
 
     @property
     def metadata(self) -> ViewMetadata:
@@ -160,13 +163,12 @@ def _user_select() -> UserSelectElement:
     return UserSelectElement(action_id="value")
 
 
+def _user_multi_select() -> UserMultiSelectElement:
+    return UserMultiSelectElement(action_id="value")
+
+
 def _datepicker() -> DatePickerElement:
     return DatePickerElement(action_id="value")
-
-
-def _priority_select() -> StaticSelectElement:
-    options = [Option(label=f"P{p}", value=str(p)) for p in range(1, 6)]
-    return StaticSelectElement(action_id="value", options=options, initial_option=options[0])
 
 
 def _input(
@@ -215,15 +217,18 @@ def page_member_modal(metadata: ViewMetadata) -> View:
     )
 
 
-def add_shift_modal(metadata: ViewMetadata) -> View:
+def configure_rotation_modal(metadata: ViewMetadata) -> View:
     return _modal(
-        CallbackID.ADD_SHIFT,
-        "Add on-call shift",
+        CallbackID.CONFIGURE_ROTATION,
+        "Configure rotation",
         [
-            _input("member", "Team member", _user_select()),
-            _input("start", "Start date", _datepicker()),
-            _input("end", "End date", _datepicker()),
-            _input("escalation_priority", "Escalation priority", _priority_select()),
+            _input("members", "Members (in rotation order)", _user_multi_select()),
+            _input(
+                "period_days",
+                "Days per person",
+                PlainTextInputElement(action_id="value", placeholder="e.g. 7"),
+            ),
+            _input("start", "First handoff date", _datepicker()),
         ],
         metadata,
     )

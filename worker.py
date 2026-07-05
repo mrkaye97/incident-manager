@@ -9,7 +9,7 @@ from hatchet_sdk import Context, Depends, EmptyModel, Hatchet
 
 from commands import (
     HELP_TEXT,
-    add_shift,
+    configure_rotation,
     create_incident,
     page_member,
     parse_subcommand,
@@ -24,7 +24,7 @@ from slack import (
     SlackSlashCommand,
     Subcommand,
     ViewMetadata,
-    add_shift_modal,
+    configure_rotation_modal,
     create_incident_modal,
     page_member_modal,
 )
@@ -79,7 +79,7 @@ async def handle_incident_slash_command(
         case Subcommand.PAGE:
             await lifespan.slack.views_open(event.trigger_id, page_member_modal(metadata))
         case Subcommand.SCHEDULE:
-            await lifespan.slack.views_open(event.trigger_id, add_shift_modal(metadata))
+            await lifespan.slack.views_open(event.trigger_id, configure_rotation_modal(metadata))
         case _:
             await lifespan.slack.respond(event.response_url, HELP_TEXT)
 
@@ -99,8 +99,8 @@ async def handle_interactivity(
             await create_incident(conn, lifespan.slack, payload)
         case CallbackID.PAGE_MEMBER:
             await page_member(conn, lifespan.slack, payload)
-        case CallbackID.ADD_SHIFT:
-            await add_shift(conn, lifespan.slack, payload)
+        case CallbackID.CONFIGURE_ROTATION:
+            await configure_rotation(conn, lifespan.slack, payload)
         case _:
             logger.warning("unhandled callback_id: %s", payload.view.callback_id)
 
@@ -129,7 +129,11 @@ async def lifespan() -> AsyncGenerator[Lifespan, None]:
 def main() -> None:
     worker = hatchet.worker(
         name="incident-bot",
-        workflows=[handle_incident_slash_command, handle_interactivity, backfill_members],
+        workflows=[
+            handle_incident_slash_command,
+            handle_interactivity,
+            backfill_members,
+        ],
         lifespan=lifespan,
     )
     worker.start()

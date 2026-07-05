@@ -18,7 +18,11 @@ package-mode = false
 dev = [
     "ruff (>=0.15.20,<0.16.0)",
     "black (>=26.5.1,<27.0.0)",
-    "ty (>=0.0.56,<0.0.57)"
+    "ty (>=0.0.56,<0.0.57)",
+    "asyncpg-stubs (>=0.31.2,<0.32.0)"
+]
+lint = [
+    "asyncpg-stubs (>=0.31.2,<0.32.0)"
 ]
 
 [tool.black]

@@ -3,11 +3,10 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, cast
 
-from asyncpg import Connection, Pool, create_pool
-from hatchet_sdk import Context, Depends, Hatchet
-from pydantic import BaseModel
+from asyncpg import Connection, Pool, Record, create_pool
+from asyncpg.pool import PoolConnectionProxy
+from hatchet_sdk import Context, Depends, EmptyModel, Hatchet
 
-from backfill_members import backfill
 from commands import (
     HELP_TEXT,
     add_shift,
@@ -16,6 +15,7 @@ from commands import (
     parse_subcommand,
     respond_oncall,
 )
+from members import backfill
 from settings import Settings
 from slack import (
     CallbackID,
@@ -40,10 +40,6 @@ class Lifespan:
         self.settings = settings
 
 
-class EmptyInput(BaseModel):
-    pass
-
-
 def lifespan_dep(
     _i: Any,
     ctx: Context,
@@ -51,17 +47,19 @@ def lifespan_dep(
     return cast(Lifespan, ctx.lifespan)
 
 
+LifespanDep = Annotated[Lifespan, Depends(lifespan_dep)]
+
+
 @asynccontextmanager
 async def connection(
     _i: Any,
     ctx: Context,
-    lifespan: Annotated[Lifespan, Depends(lifespan_dep)],
-) -> AsyncGenerator[Connection, None]:
-    async with lifespan.pool.acquire() as conn:
+    lifespan: LifespanDep,
+) -> AsyncGenerator[PoolConnectionProxy[Record], None]:
+    async with lifespan.pool.acquire() as conn, conn.transaction():
         yield conn
 
 
-LifespanDep = Annotated[Lifespan, Depends(lifespan_dep)]
 ConnectionDep = Annotated[Connection, Depends(connection)]
 
 
@@ -107,9 +105,9 @@ async def handle_interactivity(
             logger.warning("unhandled callback_id: %s", payload.view.callback_id)
 
 
-@hatchet.task(on_crons=["0 6 * * *"], input_validator=EmptyInput)
-async def backfill_members_cron(
-    _: EmptyInput,
+@hatchet.task(on_crons=["0 6 * * *"])
+async def backfill_members(
+    _: EmptyModel,
     ctx: Context,
     conn: ConnectionDep,
     lifespan: LifespanDep,
@@ -120,7 +118,7 @@ async def backfill_members_cron(
 
 async def lifespan() -> AsyncGenerator[Lifespan, None]:
     settings = Settings()  # ty: ignore[missing-argument]
-    pool = cast(Pool, await create_pool(dsn=settings.database_url))
+    pool = await create_pool(dsn=settings.database_url)
     slack = SlackClient(settings.slack_bot_oauth_token)
     try:
         yield Lifespan(pool, slack, settings)
@@ -131,7 +129,7 @@ async def lifespan() -> AsyncGenerator[Lifespan, None]:
 def main() -> None:
     worker = hatchet.worker(
         name="incident-bot",
-        workflows=[handle_incident_slash_command, handle_interactivity, backfill_members_cron],
+        workflows=[handle_incident_slash_command, handle_interactivity, backfill_members],
         lifespan=lifespan,
     )
     worker.start()

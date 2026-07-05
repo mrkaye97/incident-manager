@@ -12,6 +12,10 @@ class OnCallEntry(BaseModel):
     escalation_priority: int
 
 
+class UnexpectedDBError(Exception):
+    """Catchall for unexpected error cases that asyncpg can't figure out (since it's executing plain sql)"""
+
+
 async def member_id_by_slack_id(conn: Connection, slack_user_id: str) -> int | None:
     row = await conn.fetchrow("SELECT id FROM team_member WHERE slack_user_id = $1", slack_user_id)
     return row["id"] if row else None
@@ -32,6 +36,10 @@ async def upsert_member(
         slack_user_id,
         slack_handle,
     )
+
+    if not row:
+        raise UnexpectedDBError(f"Failed to upsert member with slack_user_id {slack_user_id}")
+
     return row["id"]
 
 
@@ -49,6 +57,10 @@ async def create_incident(
         lead_member_id,
         description,
     )
+
+    if not row:
+        raise UnexpectedDBError(f"Failed to create incident with name {name}")
+
     return row["id"]
 
 
@@ -62,6 +74,10 @@ async def create_page(conn: Connection, team_member_id: int, incident_id: int | 
         team_member_id,
         incident_id,
     )
+
+    if not row:
+        raise UnexpectedDBError(f"Failed to create page for team_member_id {team_member_id}")
+
     return row["id"]
 
 
@@ -85,6 +101,12 @@ async def add_shift(
         end_ts,
         escalation_priority,
     )
+
+    if not row:
+        raise UnexpectedDBError(
+            f"Failed to add shift for team_member_id {team_member_id} from {start} to {end}"
+        )
+
     return row["id"]
 
 

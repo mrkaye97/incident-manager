@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from typing import cast
 
@@ -31,6 +32,8 @@ from internal.types import (
     SlackUserId,
     ViewMetadata,
 )
+
+logger = logging.getLogger("incident-bot")
 
 
 def mention(user_id: SlackUserId) -> str:
@@ -83,11 +86,27 @@ class SlackClient:
         try:
             await self._web.conversations_invite(channel=channel, users=list(user_ids))
         except SlackApiError as e:
-            if e.response.get("error") not in ("already_in_channel", "cant_invite_self"):
+            if e.response.get("error") not in (
+                "already_in_channel",
+                "cant_invite_self",
+                "is_archived",
+            ):
                 raise
 
     async def post_message(self, channel: SlackChannelId | SlackUserId, text: str) -> None:
-        await self._web.chat_postMessage(channel=channel, text=text)
+        try:
+            await self._web.chat_postMessage(channel=channel, text=text)
+        except SlackApiError as e:
+            if e.response.get("error") != "is_archived":
+                raise
+            logger.info("skipped message to archived channel %s", channel)
+
+    async def archive_channel(self, channel: SlackChannelId) -> None:
+        try:
+            await self._web.conversations_archive(channel=channel)
+        except SlackApiError as e:
+            if e.response.get("error") != "already_archived":
+                raise
 
     async def respond(self, response_url: str, text: str) -> None:
         await AsyncWebhookClient(response_url).send(response_type="ephemeral", text=text)

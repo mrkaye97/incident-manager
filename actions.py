@@ -161,6 +161,7 @@ async def resolve_incident(
         incident.slack_channel_id,
         f":checkered_flag: {_who(input.actor)} resolved incident *{incident.name}*.{note}",
     )
+    await slack.archive_channel(incident.slack_channel_id)
 
     return incident
 

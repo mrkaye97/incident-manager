@@ -206,11 +206,6 @@ async def list_open_action_items(conn: Conn, incident_id: IncidentId) -> list[Ac
     return await _all(queries.list_open_action_items(conn, incident_id=incident_id))
 
 
-async def complete_action_items(conn: Conn, action_item_ids: list[int]) -> int:
-    rows = await _all(queries.complete_action_items(conn, action_item_ids=action_item_ids))
-    return len(rows)
-
-
 async def create_action_item(
     conn: Conn,
     incident_id: IncidentId,

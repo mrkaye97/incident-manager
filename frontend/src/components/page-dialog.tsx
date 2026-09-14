@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { incidentsQuery, usePage } from "@/lib/api"
+import { incidentsQuery, oncallQuery, usePage } from "@/lib/api"
 
 const NO_INCIDENT = "none"
 
@@ -40,12 +40,13 @@ export function PageDialog({
   const [incident, setIncident] = useState<string | null>(incidentId)
   const [reason, setReason] = useState("")
   const { data: openIncidents = [] } = useQuery({ ...incidentsQuery("OPEN"), enabled: open })
+  const { data: oncall = [] } = useQuery(oncallQuery)
   const page = usePage()
 
   const onOpenChange = (next: boolean) => {
     setOpen(next)
     if (next) {
-      setTarget(memberId)
+      setTarget(memberId ?? oncall[0]?.team_member_id ?? null)
       setIncident(incidentId)
       setReason("")
     }

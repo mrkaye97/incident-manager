@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
+import { CreateIncidentDialog } from "@/components/create-incident-dialog"
 import { IncidentTable } from "@/components/incident-table"
 import { OnCallNow } from "@/components/oncall-now"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { actionItemsQuery, incidentsQuery } from "@/lib/api"
 
 export function OverviewPage() {
@@ -15,6 +16,9 @@ export function OverviewPage() {
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle>Open incidents</CardTitle>
+          <CardAction>
+            <CreateIncidentDialog />
+          </CardAction>
         </CardHeader>
         <CardContent>
           <IncidentTable incidents={incidents} />

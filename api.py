@@ -1,45 +1,57 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TypeVar
 
 from asyncpg import Pool, create_pool
-from asyncpg.exceptions import (
-    ExclusionViolationError,
-    ForeignKeyViolationError,
-    UniqueViolationError,
-)
+from asyncpg.exceptions import ExclusionViolationError, UniqueViolationError
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from hatchet_sdk import FailedTaskRunExceptionGroup
+from hatchet_sdk.runnables.workflow import Standalone
 from pydantic import BaseModel, Field, model_validator
 
 import db
+import worker
+from actions import ActionError, NotFoundError
 from internal.types import (
     ActionItem,
+    Actor,
     AlertRecord,
-    AnnounceResolutionInput,
     Conn,
-    DeliverPageInput,
+    CreateActionItemInput,
+    CreateIncidentInput,
     IncidentId,
     IncidentStatus,
     IncidentSummary,
     Member,
     OnCallEntry,
     Override,
+    Page,
+    PageMemberInput,
     PageRecord,
     PushoverUserKey,
+    ResolveIncidentInput,
     Rotation,
     Shift,
     SlackUserId,
     TeamMemberId,
+    UpdateActionItemInput,
+    UpdateIncidentDescriptionInput,
 )
 from schedule import build_schedule
 from settings import Settings
-from worker import announce_incident_resolution, backfill_members, deliver_page_notification
 
 settings = Settings()  # ty: ignore[missing-argument]
+
+WEB_UI_ACTOR = Actor(name="someone via the web UI")
+TASK_TIMEOUT_SECONDS = 30
+
+TInput = TypeVar("TInput", bound=BaseModel)
+TOutput = TypeVar("TOutput", bound=BaseModel)
 
 
 @asynccontextmanager
@@ -62,6 +74,23 @@ router = APIRouter(prefix="/api")
 
 def _not_found(what: str) -> HTTPException:
     return HTTPException(status.HTTP_404_NOT_FOUND, f"{what} not found")
+
+
+async def _run(task: Standalone[TInput, TOutput], input: TInput) -> TOutput:
+    try:
+        async with asyncio.timeout(TASK_TIMEOUT_SECONDS):
+            return await task.aio_run(input)
+    except TimeoutError as e:
+        raise HTTPException(
+            status.HTTP_504_GATEWAY_TIMEOUT, f"{task.name} didn't finish — is the worker running?"
+        ) from e
+    except FailedTaskRunExceptionGroup as e:
+        for error in e.exceptions:
+            if error.exc_type == NotFoundError.__name__:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, error.exc) from e
+            if error.exc_type == ActionError.__name__:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, error.exc) from e
+        raise
 
 
 async def _require_members(conn: Conn, member_ids: list[TeamMemberId]) -> None:
@@ -88,6 +117,12 @@ class IncidentDetail(BaseModel):
     action_items: list[ActionItem]
     alerts: list[AlertRecord]
     pages: list[PageRecord]
+
+
+class IncidentCreate(BaseModel):
+    name: str = Field(min_length=1)
+    lead_id: TeamMemberId | None = None
+    description: str | None = None
 
 
 class IncidentUpdate(BaseModel):
@@ -120,33 +155,35 @@ async def get_incident(pool: PoolDep, incident_id: IncidentId) -> IncidentDetail
         )
 
 
+@router.post("/incidents", status_code=status.HTTP_201_CREATED)
+async def create_incident(body: IncidentCreate) -> IncidentSummary:
+    return await _run(
+        worker.create_incident,
+        CreateIncidentInput(
+            name=body.name,
+            lead_member_id=body.lead_id,
+            description=body.description,
+            actor=WEB_UI_ACTOR,
+        ),
+    )
+
+
 @router.patch("/incidents/{incident_id}")
-async def update_incident(
-    pool: PoolDep, incident_id: IncidentId, body: IncidentUpdate
-) -> IncidentSummary:
-    async with pool.acquire() as conn:
-        await db.update_incident_description(conn, incident_id, body.description)
-        incident = await db.get_incident(conn, incident_id)
-
-    if incident is None:
-        raise _not_found("incident")
-
-    return incident
+async def update_incident(incident_id: IncidentId, body: IncidentUpdate) -> IncidentSummary:
+    return await _run(
+        worker.update_incident_description,
+        UpdateIncidentDescriptionInput(
+            incident_id=incident_id, description=body.description, actor=WEB_UI_ACTOR
+        ),
+    )
 
 
 @router.post("/incidents/{incident_id}/resolve")
-async def resolve_incident(pool: PoolDep, incident_id: IncidentId) -> IncidentSummary:
-    async with pool.acquire() as conn:
-        incident = await db.resolve_incident(conn, incident_id)
-
-    if incident is None:
-        raise _not_found("open incident")
-
-    await announce_incident_resolution.aio_run(
-        AnnounceResolutionInput(incident_id=incident_id), wait_for_result=False
+async def resolve_incident(incident_id: IncidentId) -> IncidentSummary:
+    return await _run(
+        worker.resolve_incident,
+        ResolveIncidentInput(incident_id=incident_id, actor=WEB_UI_ACTOR),
     )
-
-    return incident
 
 
 # --- action items ---
@@ -170,57 +207,40 @@ async def list_action_items(pool: PoolDep, open_only: bool = True) -> list[Actio
 
 
 @router.post("/incidents/{incident_id}/action-items", status_code=status.HTTP_201_CREATED)
-async def create_action_item(
-    pool: PoolDep, incident_id: IncidentId, body: ActionItemCreate
-) -> ActionItem:
-    async with pool.acquire() as conn, conn.transaction():
-        if await db.get_incident(conn, incident_id) is None:
-            raise _not_found("incident")
-
-        if body.assignee_id is not None:
-            await _require_members(conn, [body.assignee_id])
-
-        item_id = await db.create_action_item(conn, incident_id, body.description, body.assignee_id)
-        item = await db.get_action_item(conn, item_id)
-
-    if item is None:
-        raise db.UnexpectedDBError(f"action item {item_id} vanished after insert")
-
-    return item
+async def create_action_item(incident_id: IncidentId, body: ActionItemCreate) -> ActionItem:
+    return await _run(
+        worker.create_action_item,
+        CreateActionItemInput(
+            incident_id=incident_id,
+            description=body.description,
+            assignee_id=body.assignee_id,
+            actor=WEB_UI_ACTOR,
+        ),
+    )
 
 
 @router.patch("/action-items/{action_item_id}")
 async def update_action_item(
     pool: PoolDep, action_item_id: int, body: ActionItemUpdate
 ) -> ActionItem:
-    async with pool.acquire() as conn, conn.transaction():
+    async with pool.acquire() as conn:
         item = await db.get_action_item(conn, action_item_id)
 
-        if item is None:
-            raise _not_found("action item")
-
-        assignee_id = (
-            body.assignee_id if "assignee_id" in body.model_fields_set else item.assignee_id
-        )
-
-        if assignee_id is not None:
-            await _require_members(conn, [assignee_id])
-
-        await db.update_action_item(
-            conn,
-            action_item_id,
-            description=body.description if body.description is not None else item.description,
-            is_completed=(
-                body.is_completed if body.is_completed is not None else item.is_completed
-            ),
-            assignee_member_id=assignee_id,
-        )
-        updated = await db.get_action_item(conn, action_item_id)
-
-    if updated is None:
+    if item is None:
         raise _not_found("action item")
 
-    return updated
+    return await _run(
+        worker.update_action_item,
+        UpdateActionItemInput(
+            action_item_id=action_item_id,
+            description=body.description if body.description is not None else item.description,
+            is_completed=body.is_completed if body.is_completed is not None else item.is_completed,
+            assignee_id=(
+                body.assignee_id if "assignee_id" in body.model_fields_set else item.assignee_id
+            ),
+            actor=WEB_UI_ACTOR,
+        ),
+    )
 
 
 class MemberInput(BaseModel):
@@ -274,7 +294,7 @@ async def update_member(pool: PoolDep, member_id: TeamMemberId, body: MemberInpu
 
 @router.post("/members/sync", status_code=status.HTTP_202_ACCEPTED)
 async def sync_members() -> TriggeredRun:
-    ref = await backfill_members.aio_run(wait_for_result=False)
+    ref = await worker.backfill_members.aio_run(wait_for_result=False)
     return TriggeredRun(run_id=ref.workflow_run_id)
 
 
@@ -387,11 +407,6 @@ class PageInput(BaseModel):
     reason: str | None = None
 
 
-class PageResult(BaseModel):
-    page_id: int
-    run_id: str
-
-
 @router.get("/pages")
 async def list_pages(
     pool: PoolDep,
@@ -402,21 +417,17 @@ async def list_pages(
         return await db.list_pages(conn, incident_id, limit)
 
 
-@router.post("/pages", status_code=status.HTTP_202_ACCEPTED)
-async def create_page(pool: PoolDep, body: PageInput) -> PageResult:
-    try:
-        async with pool.acquire() as conn:
-            page = await db.create_page(conn, body.team_member_id, body.incident_id)
-    except ForeignKeyViolationError as e:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT, "unknown team member or incident"
-        ) from e
-
-    ref = await deliver_page_notification.aio_run(
-        DeliverPageInput(page_id=page.id, reason=body.reason), wait_for_result=False
+@router.post("/pages", status_code=status.HTTP_201_CREATED)
+async def create_page(body: PageInput) -> Page:
+    return await _run(
+        worker.page_member,
+        PageMemberInput(
+            team_member_id=body.team_member_id,
+            incident_id=body.incident_id,
+            reason=body.reason,
+            actor=WEB_UI_ACTOR,
+        ),
     )
-
-    return PageResult(page_id=page.id, run_id=ref.workflow_run_id)
 
 
 class Health(BaseModel):

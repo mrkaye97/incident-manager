@@ -33,6 +33,10 @@ from internal.types import (
 )
 
 
+def mention(user_id: SlackUserId) -> str:
+    return f"<@{user_id}>"
+
+
 def channel_url(channel_id: SlackChannelId) -> str:
     return f"https://slack.com/app_redirect?channel={channel_id}"
 

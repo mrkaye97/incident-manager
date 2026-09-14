@@ -13,28 +13,26 @@ from hatchet_sdk import (
 )
 from pydantic import BaseModel
 
+import actions
+import commands
 import db
+from actions import ActionError
 from alerts import handle_alert
-from commands import (
-    HELP_TEXT,
-    announce_resolution,
-    complete_action_items,
-    create_action_item,
-    create_incident,
-    deliver_page,
-    page_member,
-    parse_subcommand,
-    resolve_incident,
-    update_description,
-)
 from internal.types import (
-    AnnounceResolutionInput,
+    ActionItem,
     CallbackID,
-    DeliverPageInput,
+    CreateActionItemInput,
+    CreateIncidentInput,
     HyperDXAlert,
+    IncidentSummary,
     InteractivityPayload,
+    Page,
+    PageMemberInput,
+    ResolveIncidentInput,
     SlackSlashCommand,
     Subcommand,
+    UpdateActionItemInput,
+    UpdateIncidentDescriptionInput,
     ViewMetadata,
 )
 from members import backfill
@@ -46,6 +44,7 @@ from slack import (
     complete_action_items_modal,
     create_action_item_modal,
     create_incident_modal,
+    mention,
     page_member_modal,
     update_description_modal,
 )
@@ -99,7 +98,7 @@ async def handle_incident_slash_command(
     lifespan: LifespanDep,
 ) -> None:
     metadata = ViewMetadata(channel_id=event.channel_id, user_id=event.user_id)
-    match parse_subcommand(event.text):
+    match commands.parse_subcommand(event.text):
         case Subcommand.CREATE:
             await lifespan.slack.views_open(event.trigger_id, create_incident_modal(metadata))
         case Subcommand.PAGE:
@@ -137,7 +136,17 @@ async def handle_incident_slash_command(
                     "Run `resolve` from an open incident's channel to resolve it.",
                 )
                 return
-            await resolve_incident(conn, lifespan.slack, lifespan.pushover, incident, event.user_id)
+            try:
+                await actions.resolve_incident(
+                    conn,
+                    lifespan.slack,
+                    lifespan.pushover,
+                    ResolveIncidentInput(
+                        incident_id=incident.id, actor=commands.command_actor(event)
+                    ),
+                )
+            except ActionError as e:
+                await lifespan.slack.respond(event.response_url, f":warning: {e}")
         case Subcommand.COMPLETE:
             incident = await db.find_open_incident_by_channel_id(conn, event.channel_id)
             if incident is None:
@@ -157,7 +166,7 @@ async def handle_incident_slash_command(
                 event.trigger_id, complete_action_items_modal(metadata, items)
             )
         case _:
-            await lifespan.slack.respond(event.response_url, HELP_TEXT)
+            await lifespan.slack.respond(event.response_url, commands.HELP_TEXT)
 
 
 @hatchet.task(on_events=["slack:interactivity"], input_validator=InteractivityPayload)
@@ -170,19 +179,26 @@ async def handle_interactivity(
     if payload.type != "view_submission":
         return
 
-    match payload.view.callback_id:
-        case CallbackID.CREATE_INCIDENT:
-            await create_incident(conn, lifespan.slack, payload)
-        case CallbackID.PAGE_MEMBER:
-            await page_member(conn, lifespan.slack, lifespan.pushover, payload)
-        case CallbackID.UPDATE_DESCRIPTION:
-            await update_description(conn, lifespan.slack, payload)
-        case CallbackID.CREATE_ACTION_ITEM:
-            await create_action_item(conn, lifespan.slack, payload)
-        case CallbackID.COMPLETE_ACTION_ITEMS:
-            await complete_action_items(conn, lifespan.slack, payload)
-        case _:
-            logger.warning("unhandled callback_id: %s", payload.view.callback_id)
+    slack = lifespan.slack
+
+    try:
+        match payload.view.callback_id:
+            case CallbackID.CREATE_INCIDENT:
+                await commands.submit_create_incident(conn, slack, payload)
+            case CallbackID.PAGE_MEMBER:
+                await commands.submit_page_member(conn, slack, lifespan.pushover, payload)
+            case CallbackID.UPDATE_DESCRIPTION:
+                await commands.submit_update_description(conn, slack, payload)
+            case CallbackID.CREATE_ACTION_ITEM:
+                await commands.submit_create_action_item(conn, slack, payload)
+            case CallbackID.COMPLETE_ACTION_ITEMS:
+                await commands.submit_complete_action_items(conn, slack, payload)
+            case _:
+                logger.warning("unhandled callback_id: %s", payload.view.callback_id)
+    except ActionError as e:
+        await slack.post_message(
+            payload.metadata.channel_id, f":warning: {mention(payload.user.id)} {e}"
+        )
 
 
 @hatchet.task(
@@ -200,31 +216,64 @@ async def handle_critical_alert(
     await handle_alert(conn, lifespan.slack, lifespan.pushover, alert)
 
 
-WEB_UI_ACTOR = "someone via the web UI"
-
-
-@hatchet.task(input_validator=DeliverPageInput)
-async def deliver_page_notification(
-    input: DeliverPageInput,
+@hatchet.task(input_validator=CreateIncidentInput)
+async def create_incident(
+    input: CreateIncidentInput,
     _ctx: Context,
     conn: ConnectionDep,
     lifespan: LifespanDep,
-) -> None:
-    await deliver_page(
-        conn, lifespan.slack, lifespan.pushover, input.page_id, input.reason, WEB_UI_ACTOR
-    )
+) -> IncidentSummary:
+    return await actions.create_incident(conn, lifespan.slack, input)
 
 
-@hatchet.task(input_validator=AnnounceResolutionInput)
-async def announce_incident_resolution(
-    input: AnnounceResolutionInput,
+@hatchet.task(input_validator=PageMemberInput)
+async def page_member(
+    input: PageMemberInput,
     _ctx: Context,
     conn: ConnectionDep,
     lifespan: LifespanDep,
-) -> None:
-    await announce_resolution(
-        conn, lifespan.slack, lifespan.pushover, input.incident_id, WEB_UI_ACTOR
-    )
+) -> Page:
+    return await actions.page_member(conn, lifespan.slack, lifespan.pushover, input)
+
+
+@hatchet.task(input_validator=ResolveIncidentInput)
+async def resolve_incident(
+    input: ResolveIncidentInput,
+    _ctx: Context,
+    conn: ConnectionDep,
+    lifespan: LifespanDep,
+) -> IncidentSummary:
+    return await actions.resolve_incident(conn, lifespan.slack, lifespan.pushover, input)
+
+
+@hatchet.task(input_validator=UpdateIncidentDescriptionInput)
+async def update_incident_description(
+    input: UpdateIncidentDescriptionInput,
+    _ctx: Context,
+    conn: ConnectionDep,
+    lifespan: LifespanDep,
+) -> IncidentSummary:
+    return await actions.update_incident_description(conn, lifespan.slack, input)
+
+
+@hatchet.task(input_validator=CreateActionItemInput)
+async def create_action_item(
+    input: CreateActionItemInput,
+    _ctx: Context,
+    conn: ConnectionDep,
+    lifespan: LifespanDep,
+) -> ActionItem:
+    return await actions.create_action_item(conn, lifespan.slack, input)
+
+
+@hatchet.task(input_validator=UpdateActionItemInput)
+async def update_action_item(
+    input: UpdateActionItemInput,
+    _ctx: Context,
+    conn: ConnectionDep,
+    lifespan: LifespanDep,
+) -> ActionItem:
+    return await actions.update_action_item(conn, lifespan.slack, input)
 
 
 @hatchet.task(on_crons=["0 6 * * *"])
@@ -267,9 +316,13 @@ def main() -> None:
             handle_interactivity,
             handle_critical_alert,
             backfill_members,
-            deliver_page_notification,
-            announce_incident_resolution,
             sync_page_acknowledgements,
+            create_incident,
+            page_member,
+            resolve_incident,
+            update_incident_description,
+            create_action_item,
+            update_action_item,
         ],
         lifespan=lifespan,
     )

@@ -4,10 +4,17 @@ import logging
 
 from asyncpg import Connection
 
+import actions
 import db
-from commands import mention, open_incident
-from internal.types import AlertState, HyperDXAlert, IncidentId
-from paging import push_page
+from actions import ActionError
+from internal.types import (
+    Actor,
+    AlertState,
+    CreateIncidentInput,
+    HyperDXAlert,
+    IncidentId,
+    PageMemberInput,
+)
 from pushover import PushoverClient
 from slack import SlackClient
 
@@ -55,42 +62,32 @@ async def handle_alert(
         )
         return
 
-    oncall = await db.current_oncall(conn)
-    primary = next((o for o in oncall if o.slack_user_id), None)
+    hyperdx = Actor(name="HyperDX")
 
-    if primary is None or primary.slack_user_id is None:
-        await _record(conn, alert, None)
-        logger.warning(
-            "hyperdx alert %r firing but nobody is on call — no incident opened", alert.title
+    try:
+        incident = await actions.create_incident(
+            conn,
+            slack,
+            CreateIncidentInput(name=alert.title, description=alert.body, actor=hyperdx),
         )
+    except ActionError as e:
+        await _record(conn, alert, None)
+        logger.warning("hyperdx alert %r firing but no incident opened: %s", alert.title, e)
         return
 
-    lead_id = await db.member_id_by_slack_id(conn, primary.slack_user_id)
-
-    if lead_id is None:
-        await _record(conn, alert, None)
-        logger.warning(
-            "on-call %s for alert %r isn't on the team roster — no incident opened",
-            primary.slack_user_id,
-            alert.title,
-        )
-        return
-
-    incident_id, channel_id = await open_incident(
+    await _record(conn, alert, incident.id)
+    await actions.page_member(
         conn,
         slack,
-        name=alert.title,
-        lead_member_id=lead_id,
-        description=alert.body,
-        invite_slack_ids={primary.slack_user_id},
+        pushover,
+        PageMemberInput(
+            team_member_id=incident.lead_id,
+            incident_id=incident.id,
+            reason=alert.title,
+            actor=hyperdx,
+        ),
     )
-
-    await _record(conn, alert, incident_id)
-    page = await db.create_page(conn, lead_id, incident_id)
-    await push_page(conn, pushover, page.id, "HyperDX", alert.body)
-
     await slack.post_message(
-        channel_id,
-        f":rotating_light: Incident *{alert.title}* opened from a HyperDX alert. "
-        f"Paged {mention(primary.slack_user_id)} (on-call).{_link(alert)}{_body(alert)}",
+        incident.slack_channel_id,
+        f":rotating_light: Opened from a HyperDX alert.{_link(alert)}{_body(alert)}",
     )

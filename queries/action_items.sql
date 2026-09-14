@@ -6,13 +6,6 @@ WHERE incident_id = :incident_id AND is_completed = FALSE
 ORDER BY created_at;
 
 
--- name: complete_action_items(action_item_ids)
-UPDATE incident_action_item
-SET is_completed = TRUE, updated_at = NOW()
-WHERE id = ANY(:action_item_ids::BIGINT[]) AND is_completed = FALSE
-RETURNING id;
-
-
 -- name: create_action_item(incident_id, description, assignee_member_id)$
 INSERT INTO incident_action_item (incident_id, description, assignee_team_member_id)
 VALUES (:incident_id, :description, :assignee_member_id)

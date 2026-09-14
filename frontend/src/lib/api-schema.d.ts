@@ -31,7 +31,8 @@ export interface paths {
         /** List Incidents */
         get: operations["list_incidents_api_incidents_get"];
         put?: never;
-        post?: never;
+        /** Create Incident */
+        post: operations["create_incident_api_incidents_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -382,6 +383,15 @@ export interface components {
              */
             status: "ok";
         };
+        /** IncidentCreate */
+        IncidentCreate: {
+            /** Name */
+            name: string;
+            /** Lead Id */
+            lead_id?: number | null;
+            /** Description */
+            description?: string | null;
+        };
         /** IncidentDetail */
         IncidentDetail: {
             incident: components["schemas"]["IncidentSummary"];
@@ -505,6 +515,15 @@ export interface components {
             /** Escalation Priority */
             escalation_priority: number;
         };
+        /** Page */
+        Page: {
+            /** Id */
+            id: number;
+            /** Incident Id */
+            incident_id: string | null;
+            /** Slack Channel Id */
+            slack_channel_id: string | null;
+        };
         /** PageInput */
         PageInput: {
             /** Team Member Id */
@@ -533,13 +552,6 @@ export interface components {
             pushed: boolean;
             /** Acknowledged At */
             acknowledged_at: string | null;
-        };
-        /** PageResult */
-        PageResult: {
-            /** Page Id */
-            page_id: number;
-            /** Run Id */
-            run_id: string;
         };
         /** Rotation */
         Rotation: {
@@ -652,6 +664,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IncidentSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_incident_api_incidents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IncidentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncidentSummary"];
                 };
             };
             /** @description Validation Error */
@@ -1216,12 +1261,12 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            202: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PageResult"];
+                    "application/json": components["schemas"]["Page"];
                 };
             };
             /** @description Validation Error */

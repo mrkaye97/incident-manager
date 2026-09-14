@@ -308,10 +308,46 @@ class HyperDXAlert(BaseModel):
         return cleaned or None
 
 
-class DeliverPageInput(BaseModel):
-    page_id: int
+class Actor(BaseModel):
+    name: str
+    slack_user_id: SlackUserId | None = None
+
+
+class CreateIncidentInput(BaseModel):
+    name: str = Field(min_length=1)
+    lead_member_id: TeamMemberId | None = None
+    description: str | None = None
+    actor: Actor
+
+
+class PageMemberInput(BaseModel):
+    team_member_id: TeamMemberId
+    incident_id: IncidentId | None = None
     reason: str | None = None
+    actor: Actor
 
 
-class AnnounceResolutionInput(BaseModel):
+class ResolveIncidentInput(BaseModel):
     incident_id: IncidentId
+    actor: Actor
+
+
+class UpdateIncidentDescriptionInput(BaseModel):
+    incident_id: IncidentId
+    description: str
+    actor: Actor
+
+
+class CreateActionItemInput(BaseModel):
+    incident_id: IncidentId
+    description: str = Field(min_length=1)
+    assignee_id: TeamMemberId | None = None
+    actor: Actor
+
+
+class UpdateActionItemInput(BaseModel):
+    action_item_id: int
+    description: str = Field(min_length=1)
+    is_completed: bool
+    assignee_id: TeamMemberId | None
+    actor: Actor

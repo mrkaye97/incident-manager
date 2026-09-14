@@ -124,6 +124,12 @@ function useApiMutation<TVars, TData>(
   })
 }
 
+export const useCreateIncident = () =>
+  useApiMutation(
+    (body: Schemas["IncidentCreate"]) => unwrap(client.POST("/api/incidents", { body })),
+    { invalidate: [["incidents"]], success: "Incident created" },
+  )
+
 export const useUpdateIncident = (id: string) =>
   useApiMutation(
     (description: string) =>

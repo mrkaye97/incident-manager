@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 
+import { CreateIncidentDialog } from "@/components/create-incident-dialog"
 import { IncidentTable } from "@/components/incident-table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -16,21 +17,24 @@ export function IncidentsPage({ status }: IncidentsSearch) {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>Incidents</CardTitle>
-        <Tabs
-          value={status ?? "ALL"}
-          onValueChange={(v) =>
-            navigate({
-              to: "/incidents",
-              search: v === "ALL" ? {} : { status: v as IncidentStatus },
-            })
-          }
-        >
-          <TabsList>
-            <TabsTrigger value="OPEN">Open</TabsTrigger>
-            <TabsTrigger value="RESOLVED">Resolved</TabsTrigger>
-            <TabsTrigger value="ALL">All</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex flex-wrap items-center gap-2">
+          <Tabs
+            value={status ?? "ALL"}
+            onValueChange={(v) =>
+              navigate({
+                to: "/incidents",
+                search: v === "ALL" ? {} : { status: v as IncidentStatus },
+              })
+            }
+          >
+            <TabsList>
+              <TabsTrigger value="OPEN">Open</TabsTrigger>
+              <TabsTrigger value="RESOLVED">Resolved</TabsTrigger>
+              <TabsTrigger value="ALL">All</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <CreateIncidentDialog />
+        </div>
       </CardHeader>
       <CardContent>{!isLoading && <IncidentTable incidents={incidents} />}</CardContent>
     </Card>

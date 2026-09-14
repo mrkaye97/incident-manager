@@ -1,23 +1,42 @@
-import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router"
+import { Outlet, createRootRoute, createRoute, createRouter } from "@tanstack/react-router"
 
 import { Layout } from "@/components/layout"
 import { ActionItemsPage } from "@/routes/action-items"
 import { IncidentDetailPage } from "@/routes/incident-detail"
 import { IncidentsPage, type IncidentsSearch } from "@/routes/incidents"
+import { LoginPage, type LoginSearch } from "@/routes/login"
 import { OnCallPage } from "@/routes/oncall"
 import { OverviewPage } from "@/routes/overview"
 import { TeamPage } from "@/routes/team"
 
-const rootRoute = createRootRoute({ component: Layout })
+const rootRoute = createRootRoute({ component: Outlet })
+
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  validateSearch: (search: Record<string, unknown>): LoginSearch => ({
+    next: typeof search.next === "string" ? search.next : undefined,
+    error: typeof search.error === "string" ? search.error : undefined,
+  }),
+  component: function LoginRoute() {
+    return <LoginPage {...loginRoute.useSearch()} />
+  },
+})
+
+const appRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: "app",
+  component: Layout,
+})
 
 const overviewRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/",
   component: OverviewPage,
 })
 
 const incidentsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/incidents",
   validateSearch: (search: Record<string, unknown>): IncidentsSearch => ({
     status: search.status === "OPEN" || search.status === "RESOLVED" ? search.status : undefined,
@@ -29,7 +48,7 @@ const incidentsRoute = createRoute({
 })
 
 const incidentDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/incidents/$incidentId",
   component: function IncidentDetailRoute() {
     const { incidentId } = incidentDetailRoute.useParams()
@@ -38,31 +57,34 @@ const incidentDetailRoute = createRoute({
 })
 
 const actionItemsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/action-items",
   component: ActionItemsPage,
 })
 
 const oncallRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/oncall",
   component: OnCallPage,
 })
 
 const teamRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/team",
   component: TeamPage,
 })
 
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
-    overviewRoute,
-    incidentsRoute,
-    incidentDetailRoute,
-    actionItemsRoute,
-    oncallRoute,
-    teamRoute,
+    loginRoute,
+    appRoute.addChildren([
+      overviewRoute,
+      incidentsRoute,
+      incidentDetailRoute,
+      actionItemsRoute,
+      oncallRoute,
+      teamRoute,
+    ]),
   ]),
 })
 

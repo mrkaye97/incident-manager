@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link, Outlet } from "@tanstack/react-router"
-import { ExternalLinkIcon, SirenIcon } from "lucide-react"
+import { ExternalLinkIcon, LogOutIcon, SirenIcon } from "lucide-react"
 
 import { PageDialog } from "@/components/page-dialog"
+import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
-import { configQuery } from "@/lib/api"
+import { configQuery, logout, meQuery } from "@/lib/api"
 
 const NAV = [
   { to: "/", label: "Overview" },
@@ -15,7 +16,10 @@ const NAV = [
 ] as const
 
 export function Layout() {
+  const { data: me } = useQuery(meQuery)
   const { data: config } = useQuery(configQuery)
+
+  if (!me) return null
 
   return (
     <div className="min-h-svh bg-muted/30">
@@ -49,6 +53,10 @@ export function Layout() {
               </a>
             )}
             <PageDialog />
+            <span className="text-sm text-muted-foreground">{me.name}</span>
+            <Button variant="ghost" size="icon-sm" aria-label="Sign out" onClick={logout}>
+              <LogOutIcon />
+            </Button>
           </div>
         </div>
       </header>

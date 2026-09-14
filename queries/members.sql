@@ -46,3 +46,10 @@ SET
     updated_at = now()
 WHERE id = :member_id
 RETURNING id, name, slack_user_id, slack_handle, pushover_user_key;
+
+
+-- name: get_member_by_slack_id(slack_user_id)^
+-- record_class: Member
+SELECT id, name, slack_user_id, slack_handle, pushover_user_key
+FROM team_member
+WHERE slack_user_id = :slack_user_id;

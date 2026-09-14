@@ -6,10 +6,18 @@ class Settings(BaseSettings):
 
     slack_bot_oauth_token: str
 
+    slack_client_id: str
+
+    slack_client_secret: str
+
     pushover_app_token: str
 
     status_page_url: str = "https://status.example.com"
 
-    cors_origins: list[str] = ["http://localhost:3000"]
+    app_url: str = "https://localhost:3000"
+
+    api_url: str | None = None
+
+    cors_origins: list[str] = ["https://localhost:3000"]
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

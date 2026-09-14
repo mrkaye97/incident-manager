@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
@@ -8,6 +9,14 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, './src') },
   },
-  // fixed port so it matches the API's CORS_ORIGINS
-  server: { port: 3000, strictPort: true },
+  // Slack requires an https redirect, so dev runs on https (`make certs`) and proxies /api
+  server: {
+    port: 3000,
+    strictPort: true,
+    https: {
+      cert: fs.readFileSync('.certs/localhost.pem'),
+      key: fs.readFileSync('.certs/localhost-key.pem'),
+    },
+    proxy: { '/api': process.env.API_URL ?? 'http://localhost:8000' },
+  },
 })

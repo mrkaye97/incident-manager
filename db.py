@@ -97,6 +97,10 @@ async def get_member(conn: Conn, member_id: TeamMemberId) -> Member | None:
     return await queries.get_member(conn, member_id=member_id)
 
 
+async def get_member_by_slack_id(conn: Conn, slack_user_id: SlackUserId) -> Member | None:
+    return await queries.get_member_by_slack_id(conn, slack_user_id=slack_user_id)
+
+
 async def missing_member_ids(conn: Conn, member_ids: list[TeamMemberId]) -> set[TeamMemberId]:
     rows = await _all(queries.existing_member_ids(conn, member_ids=member_ids))
     return set(member_ids) - {row["id"] for row in rows}
@@ -365,3 +369,19 @@ async def create_override(
 
 async def delete_override(conn: Conn, override_id: int) -> bool:
     return await queries.delete_override(conn, override_id=override_id) != "DELETE 0"
+
+
+async def create_session(
+    conn: Conn, token_hash: str, team_member_id: TeamMemberId, expires_at: datetime
+) -> None:
+    await queries.create_session(
+        conn, token_hash=token_hash, team_member_id=team_member_id, expires_at=expires_at
+    )
+
+
+async def get_session_member(conn: Conn, token_hash: str) -> Member | None:
+    return await queries.get_session_member(conn, token_hash=token_hash)
+
+
+async def delete_session(conn: Conn, token_hash: str) -> None:
+    await queries.delete_session(conn, token_hash=token_hash)

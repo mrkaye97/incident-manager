@@ -1,4 +1,4 @@
-.PHONY: lint fmt test worker api frontend openapi
+.PHONY: lint fmt test worker api frontend openapi certs
 
 lint:
 	poetry run ruff check .
@@ -20,8 +20,15 @@ worker:
 api:
 	poetry run uvicorn api:app --reload --port 8000
 
-frontend:
+frontend: frontend/.certs/localhost.pem
 	cd frontend && pnpm dev
+
+# trusted localhost cert for the https dev server (run `mkcert -install` once per machine)
+certs: frontend/.certs/localhost.pem
+
+frontend/.certs/localhost.pem:
+	mkdir -p frontend/.certs
+	mkcert -cert-file frontend/.certs/localhost.pem -key-file frontend/.certs/localhost-key.pem localhost 127.0.0.1 ::1
 
 # regenerate frontend API types from the FastAPI schema
 openapi:

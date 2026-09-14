@@ -26,9 +26,12 @@ export type OverrideInput = Schemas["OverrideInput"]
 export type Shift = Schemas["Shift"]
 export type PageInput = Schemas["PageInput"]
 
-export const client = createClient<paths>({
-  baseUrl: import.meta.env.VITE_API_URL ?? "http://localhost:8000",
-})
+const API_URL = import.meta.env.VITE_API_URL ?? ""
+
+export const client = createClient<paths>({ baseUrl: API_URL, credentials: "include" })
+
+export const loginUrl = (next: string) =>
+  `${API_URL}/api/auth/login?next=${encodeURIComponent(next)}`
 
 export class ApiError extends Error {}
 
@@ -47,11 +50,26 @@ async function unwrap<T>(
   request: Promise<{ data?: T; error?: unknown; response: Response }>,
 ): Promise<T> {
   const { data, error, response } = await request
+  if (response.status === 401 && window.location.pathname !== "/login") {
+    const next = window.location.pathname + window.location.search
+    window.location.assign(`/login?next=${encodeURIComponent(next)}`)
+  }
   if (!response.ok) throw new ApiError(errorMessage(error))
   return data as T
 }
 
 // --- queries ---
+
+export const meQuery = queryOptions({
+  queryKey: ["me"],
+  queryFn: () => unwrap(client.GET("/api/auth/me")),
+  staleTime: Infinity,
+})
+
+export async function logout() {
+  await client.POST("/api/auth/logout")
+  window.location.assign("/login")
+}
 
 export const configQuery = queryOptions({
   queryKey: ["config"],

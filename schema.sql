@@ -110,3 +110,10 @@ SELECT
 FROM incident_action_item ai
 JOIN incident i ON i.id = ai.incident_id
 LEFT JOIN team_member tm ON tm.id = ai.assignee_team_member_id;
+
+CREATE TABLE IF NOT EXISTS session (
+    token_hash TEXT PRIMARY KEY,
+    team_member_id BIGINT NOT NULL REFERENCES team_member(id),
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

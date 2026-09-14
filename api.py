@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import secrets
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -10,10 +11,12 @@ from asyncpg import Pool, create_pool
 from asyncpg.exceptions import ExclusionViolationError, UniqueViolationError
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse, Response
 from hatchet_sdk import FailedTaskRunExceptionGroup
 from hatchet_sdk.runnables.workflow import Standalone
 from pydantic import BaseModel, Field, model_validator
 
+import auth
 import db
 import worker
 from actions import ActionError, NotFoundError
@@ -47,7 +50,6 @@ from settings import Settings
 
 settings = Settings()  # ty: ignore[missing-argument]
 
-WEB_UI_ACTOR = Actor(name="someone via the web UI")
 TASK_TIMEOUT_SECONDS = 30
 
 TInput = TypeVar("TInput", bound=BaseModel)
@@ -69,7 +71,116 @@ def pool(request: Request) -> Pool:
 
 PoolDep = Annotated[Pool, Depends(pool)]
 
-router = APIRouter(prefix="/api")
+
+async def current_member(request: Request, pool: PoolDep) -> Member:
+    token = request.cookies.get(auth.SESSION_COOKIE)
+    member = None
+
+    if token:
+        async with pool.acquire() as conn:
+            member = await db.get_session_member(conn, auth.hash_token(token))
+
+    if member is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not signed in")
+
+    return member
+
+
+CurrentMemberDep = Annotated[Member, Depends(current_member)]
+
+router = APIRouter(prefix="/api", dependencies=[Depends(current_member)])
+public_router = APIRouter(prefix="/api")
+
+
+def _actor(member: Member) -> Actor:
+    return Actor(name=member.name, slack_user_id=member.slack_user_id)
+
+
+def _set_cookie(response: Response, key: str, value: str, max_age: timedelta) -> None:
+    response.set_cookie(
+        key,
+        value,
+        max_age=int(max_age.total_seconds()),
+        httponly=True,
+        secure=True,
+        samesite="lax",
+    )
+
+
+def _redirect_uri() -> str:
+    return f"{settings.api_url or settings.app_url}/api/auth/callback"
+
+
+def _login_redirect(error: str) -> RedirectResponse:
+    return RedirectResponse(f"{settings.app_url}/login?error={error}", status.HTTP_302_FOUND)
+
+
+@public_router.get("/auth/login")
+async def login(next: str | None = None) -> RedirectResponse:
+    state = auth.new_token()
+    response = RedirectResponse(
+        auth.authorize_url(settings.slack_client_id, _redirect_uri(), state),
+        status.HTTP_302_FOUND,
+    )
+    _set_cookie(response, auth.STATE_COOKIE, state, auth.STATE_LIFETIME)
+    _set_cookie(response, auth.NEXT_COOKIE, auth.safe_next_path(next), auth.STATE_LIFETIME)
+    return response
+
+
+@public_router.get("/auth/callback")
+async def auth_callback(
+    request: Request,
+    pool: PoolDep,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    expected_state = request.cookies.get(auth.STATE_COOKIE)
+
+    if error or not code or not state or not expected_state:
+        return _login_redirect(error or "invalid_state")
+
+    if not secrets.compare_digest(state, expected_state):
+        return _login_redirect("invalid_state")
+
+    try:
+        slack_user_id = await auth.slack_user_id_for_code(
+            settings.slack_client_id, settings.slack_client_secret, code, _redirect_uri()
+        )
+    except auth.SlackAuthError:
+        return _login_redirect("slack_error")
+
+    async with pool.acquire() as conn:
+        member = await db.get_member_by_slack_id(conn, slack_user_id)
+
+        if member is None:
+            return _login_redirect("not_on_roster")
+
+        token = auth.new_token()
+        await db.create_session(conn, auth.hash_token(token), member.id, auth.session_expiry())
+
+    next_path = auth.safe_next_path(request.cookies.get(auth.NEXT_COOKIE))
+    response = RedirectResponse(f"{settings.app_url}{next_path}", status.HTTP_302_FOUND)
+    _set_cookie(response, auth.SESSION_COOKIE, token, auth.SESSION_LIFETIME)
+    response.delete_cookie(auth.STATE_COOKIE)
+    response.delete_cookie(auth.NEXT_COOKIE)
+    return response
+
+
+@public_router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(request: Request, pool: PoolDep) -> Response:
+    if token := request.cookies.get(auth.SESSION_COOKIE):
+        async with pool.acquire() as conn:
+            await db.delete_session(conn, auth.hash_token(token))
+
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.delete_cookie(auth.SESSION_COOKIE, secure=True, httponly=True, samesite="lax")
+    return response
+
+
+@router.get("/auth/me")
+async def me(member: CurrentMemberDep) -> Member:
+    return member
 
 
 def _not_found(what: str) -> HTTPException:
@@ -156,33 +267,35 @@ async def get_incident(pool: PoolDep, incident_id: IncidentId) -> IncidentDetail
 
 
 @router.post("/incidents", status_code=status.HTTP_201_CREATED)
-async def create_incident(body: IncidentCreate) -> IncidentSummary:
+async def create_incident(member: CurrentMemberDep, body: IncidentCreate) -> IncidentSummary:
     return await _run(
         worker.create_incident,
         CreateIncidentInput(
             name=body.name,
             lead_member_id=body.lead_id,
             description=body.description,
-            actor=WEB_UI_ACTOR,
+            actor=_actor(member),
         ),
     )
 
 
 @router.patch("/incidents/{incident_id}")
-async def update_incident(incident_id: IncidentId, body: IncidentUpdate) -> IncidentSummary:
+async def update_incident(
+    member: CurrentMemberDep, incident_id: IncidentId, body: IncidentUpdate
+) -> IncidentSummary:
     return await _run(
         worker.update_incident_description,
         UpdateIncidentDescriptionInput(
-            incident_id=incident_id, description=body.description, actor=WEB_UI_ACTOR
+            incident_id=incident_id, description=body.description, actor=_actor(member)
         ),
     )
 
 
 @router.post("/incidents/{incident_id}/resolve")
-async def resolve_incident(incident_id: IncidentId) -> IncidentSummary:
+async def resolve_incident(member: CurrentMemberDep, incident_id: IncidentId) -> IncidentSummary:
     return await _run(
         worker.resolve_incident,
-        ResolveIncidentInput(incident_id=incident_id, actor=WEB_UI_ACTOR),
+        ResolveIncidentInput(incident_id=incident_id, actor=_actor(member)),
     )
 
 
@@ -207,21 +320,23 @@ async def list_action_items(pool: PoolDep, open_only: bool = True) -> list[Actio
 
 
 @router.post("/incidents/{incident_id}/action-items", status_code=status.HTTP_201_CREATED)
-async def create_action_item(incident_id: IncidentId, body: ActionItemCreate) -> ActionItem:
+async def create_action_item(
+    member: CurrentMemberDep, incident_id: IncidentId, body: ActionItemCreate
+) -> ActionItem:
     return await _run(
         worker.create_action_item,
         CreateActionItemInput(
             incident_id=incident_id,
             description=body.description,
             assignee_id=body.assignee_id,
-            actor=WEB_UI_ACTOR,
+            actor=_actor(member),
         ),
     )
 
 
 @router.patch("/action-items/{action_item_id}")
 async def update_action_item(
-    pool: PoolDep, action_item_id: int, body: ActionItemUpdate
+    member: CurrentMemberDep, pool: PoolDep, action_item_id: int, body: ActionItemUpdate
 ) -> ActionItem:
     async with pool.acquire() as conn:
         item = await db.get_action_item(conn, action_item_id)
@@ -238,7 +353,7 @@ async def update_action_item(
             assignee_id=(
                 body.assignee_id if "assignee_id" in body.model_fields_set else item.assignee_id
             ),
-            actor=WEB_UI_ACTOR,
+            actor=_actor(member),
         ),
     )
 
@@ -418,14 +533,14 @@ async def list_pages(
 
 
 @router.post("/pages", status_code=status.HTTP_201_CREATED)
-async def create_page(body: PageInput) -> Page:
+async def create_page(member: CurrentMemberDep, body: PageInput) -> Page:
     return await _run(
         worker.page_member,
         PageMemberInput(
             team_member_id=body.team_member_id,
             incident_id=body.incident_id,
             reason=body.reason,
-            actor=WEB_UI_ACTOR,
+            actor=_actor(member),
         ),
     )
 
@@ -434,16 +549,18 @@ class Health(BaseModel):
     status: Literal["ok"] = "ok"
 
 
-@router.get("/healthz")
+@public_router.get("/healthz")
 async def healthz() -> Health:
     return Health()
 
 
 app = FastAPI(title="Incident Manager", lifespan=lifespan)
+app.include_router(public_router)
 app.include_router(router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -16,16 +16,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 
 import db
-from ids import IncidentId, SlackUserId, TeamMemberId
-from schedule import Shift, build_schedule
-from settings import Settings
-from worker import (
+from internal.types import (
+    ActionItem,
+    AlertRecord,
     AnnounceResolutionInput,
+    Conn,
     DeliverPageInput,
-    announce_incident_resolution,
-    backfill_members,
-    deliver_page_notification,
+    IncidentId,
+    IncidentStatus,
+    IncidentSummary,
+    Member,
+    OnCallEntry,
+    Override,
+    PageRecord,
+    Rotation,
+    Shift,
+    SlackUserId,
+    TeamMemberId,
 )
+from schedule import build_schedule
+from settings import Settings
+from worker import announce_incident_resolution, backfill_members, deliver_page_notification
 
 settings = Settings()  # ty: ignore[missing-argument]
 
@@ -52,7 +63,7 @@ def _not_found(what: str) -> HTTPException:
     return HTTPException(status.HTTP_404_NOT_FOUND, f"{what} not found")
 
 
-async def _require_members(conn: db.Conn, member_ids: list[TeamMemberId]) -> None:
+async def _require_members(conn: Conn, member_ids: list[TeamMemberId]) -> None:
     if missing := await db.missing_member_ids(conn, member_ids):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, f"unknown team member(s): {sorted(missing)}"
@@ -72,10 +83,10 @@ async def get_config() -> AppConfig:
 
 
 class IncidentDetail(BaseModel):
-    incident: db.IncidentSummary
-    action_items: list[db.ActionItem]
-    alerts: list[db.AlertRecord]
-    pages: list[db.PageRecord]
+    incident: IncidentSummary
+    action_items: list[ActionItem]
+    alerts: list[AlertRecord]
+    pages: list[PageRecord]
 
 
 class IncidentUpdate(BaseModel):
@@ -85,9 +96,9 @@ class IncidentUpdate(BaseModel):
 @router.get("/incidents")
 async def list_incidents(
     pool: PoolDep,
-    status: db.IncidentStatus | None = None,
+    status: IncidentStatus | None = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
-) -> list[db.IncidentSummary]:
+) -> list[IncidentSummary]:
     async with pool.acquire() as conn:
         return await db.list_incidents(conn, status, limit)
 
@@ -111,7 +122,7 @@ async def get_incident(pool: PoolDep, incident_id: IncidentId) -> IncidentDetail
 @router.patch("/incidents/{incident_id}")
 async def update_incident(
     pool: PoolDep, incident_id: IncidentId, body: IncidentUpdate
-) -> db.IncidentSummary:
+) -> IncidentSummary:
     async with pool.acquire() as conn:
         await db.update_incident_description(conn, incident_id, body.description)
         incident = await db.get_incident(conn, incident_id)
@@ -123,7 +134,7 @@ async def update_incident(
 
 
 @router.post("/incidents/{incident_id}/resolve")
-async def resolve_incident(pool: PoolDep, incident_id: IncidentId) -> db.IncidentSummary:
+async def resolve_incident(pool: PoolDep, incident_id: IncidentId) -> IncidentSummary:
     async with pool.acquire() as conn:
         incident = await db.resolve_incident(conn, incident_id)
 
@@ -152,7 +163,7 @@ class ActionItemUpdate(BaseModel):
 
 
 @router.get("/action-items")
-async def list_action_items(pool: PoolDep, open_only: bool = True) -> list[db.ActionItem]:
+async def list_action_items(pool: PoolDep, open_only: bool = True) -> list[ActionItem]:
     async with pool.acquire() as conn:
         return await db.list_action_items(conn, open_only=open_only)
 
@@ -160,7 +171,7 @@ async def list_action_items(pool: PoolDep, open_only: bool = True) -> list[db.Ac
 @router.post("/incidents/{incident_id}/action-items", status_code=status.HTTP_201_CREATED)
 async def create_action_item(
     pool: PoolDep, incident_id: IncidentId, body: ActionItemCreate
-) -> db.ActionItem:
+) -> ActionItem:
     async with pool.acquire() as conn, conn.transaction():
         if await db.get_incident(conn, incident_id) is None:
             raise _not_found("incident")
@@ -180,7 +191,7 @@ async def create_action_item(
 @router.patch("/action-items/{action_item_id}")
 async def update_action_item(
     pool: PoolDep, action_item_id: int, body: ActionItemUpdate
-) -> db.ActionItem:
+) -> ActionItem:
     async with pool.acquire() as conn, conn.transaction():
         item = await db.get_action_item(conn, action_item_id)
 
@@ -222,13 +233,13 @@ class TriggeredRun(BaseModel):
 
 
 @router.get("/members")
-async def list_members(pool: PoolDep) -> list[db.Member]:
+async def list_members(pool: PoolDep) -> list[Member]:
     async with pool.acquire() as conn:
         return await db.list_members(conn)
 
 
 @router.post("/members", status_code=status.HTTP_201_CREATED)
-async def create_member(pool: PoolDep, body: MemberInput) -> db.Member:
+async def create_member(pool: PoolDep, body: MemberInput) -> Member:
     try:
         async with pool.acquire() as conn:
             return await db.create_member(conn, body.name, body.slack_user_id, body.slack_handle)
@@ -237,7 +248,7 @@ async def create_member(pool: PoolDep, body: MemberInput) -> db.Member:
 
 
 @router.put("/members/{member_id}")
-async def update_member(pool: PoolDep, member_id: TeamMemberId, body: MemberInput) -> db.Member:
+async def update_member(pool: PoolDep, member_id: TeamMemberId, body: MemberInput) -> Member:
     try:
         async with pool.acquire() as conn:
             member = await db.update_member(
@@ -278,19 +289,19 @@ class OverrideInput(BaseModel):
 
 
 @router.get("/oncall")
-async def current_oncall(pool: PoolDep) -> list[db.OnCallEntry]:
+async def current_oncall(pool: PoolDep) -> list[OnCallEntry]:
     async with pool.acquire() as conn:
         return await db.current_oncall(conn)
 
 
 @router.get("/rotation")
-async def get_rotation(pool: PoolDep) -> db.Rotation | None:
+async def get_rotation(pool: PoolDep) -> Rotation | None:
     async with pool.acquire() as conn:
         return await db.get_rotation(conn)
 
 
 @router.put("/rotation")
-async def put_rotation(pool: PoolDep, body: RotationInput) -> db.Rotation:
+async def put_rotation(pool: PoolDep, body: RotationInput) -> Rotation:
     if len(set(body.member_ids)) != len(body.member_ids):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "a member can only appear once in the rotation"
@@ -330,7 +341,7 @@ async def get_schedule(
 @router.get("/overrides")
 async def list_overrides(
     pool: PoolDep, start: datetime | None = None, end: datetime | None = None
-) -> list[db.Override]:
+) -> list[Override]:
     start, end = _window(start, end)
 
     async with pool.acquire() as conn:
@@ -338,7 +349,7 @@ async def list_overrides(
 
 
 @router.post("/overrides", status_code=status.HTTP_201_CREATED)
-async def create_override(pool: PoolDep, body: OverrideInput) -> db.Override:
+async def create_override(pool: PoolDep, body: OverrideInput) -> Override:
     try:
         async with pool.acquire() as conn, conn.transaction():
             await _require_members(conn, [body.team_member_id])
@@ -377,7 +388,7 @@ async def list_pages(
     pool: PoolDep,
     incident_id: IncidentId | None = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
-) -> list[db.PageRecord]:
+) -> list[PageRecord]:
     async with pool.acquire() as conn:
         return await db.list_pages(conn, incident_id, limit)
 

@@ -8,8 +8,16 @@ from uuid import UUID
 from asyncpg import Connection
 
 import db
-from ids import IncidentId, SlackChannelId, SlackUserId, TeamMemberId
-from slack import InteractivityPayload, SlackClient, Subcommand
+from internal.types import (
+    Incident,
+    IncidentId,
+    InteractivityPayload,
+    SlackChannelId,
+    SlackUserId,
+    Subcommand,
+    TeamMemberId,
+)
+from slack import SlackClient
 
 logger = logging.getLogger("incident-bot")
 
@@ -250,7 +258,7 @@ async def create_action_item(
 
 
 async def resolve_incident(
-    conn: Connection, slack: SlackClient, incident: db.Incident, actor_slack_id: SlackUserId
+    conn: Connection, slack: SlackClient, incident: Incident, actor_slack_id: SlackUserId
 ) -> None:
     await db.resolve_incident(conn, incident.id)
     await announce_resolution(conn, slack, incident.id, mention(actor_slack_id))

@@ -3,7 +3,8 @@ from __future__ import annotations
 from asyncpg import Connection
 
 import db
-from slack import SlackClient, SlackMember
+from internal.types import SlackMember
+from slack import SlackClient
 
 ENG_GROUP_HANDLE = "eng"
 

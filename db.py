@@ -24,6 +24,9 @@ from internal.types import (
     Page,
     PageDelivery,
     PageRecord,
+    PendingAcknowledgement,
+    PushoverReceipt,
+    PushoverUserKey,
     Rotation,
     SlackChannelId,
     SlackUserId,
@@ -55,6 +58,7 @@ RECORD_CLASSES: dict[str, type[BaseModel]] = {
         Page,
         PageDelivery,
         PageRecord,
+        PendingAcknowledgement,
         Rotation,
         OnCallEntry,
         Override,
@@ -99,10 +103,18 @@ async def missing_member_ids(conn: Conn, member_ids: list[TeamMemberId]) -> set[
 
 
 async def create_member(
-    conn: Conn, name: str, slack_user_id: SlackUserId | None, slack_handle: str | None
+    conn: Conn,
+    name: str,
+    slack_user_id: SlackUserId | None,
+    slack_handle: str | None,
+    pushover_user_key: PushoverUserKey | None,
 ) -> Member:
     member = await queries.create_member(
-        conn, name=name, slack_user_id=slack_user_id, slack_handle=slack_handle
+        conn,
+        name=name,
+        slack_user_id=slack_user_id,
+        slack_handle=slack_handle,
+        pushover_user_key=pushover_user_key,
     )
 
     if member is None:
@@ -117,6 +129,7 @@ async def update_member(
     name: str,
     slack_user_id: SlackUserId | None,
     slack_handle: str | None,
+    pushover_user_key: PushoverUserKey | None,
 ) -> Member | None:
     return await queries.update_member(
         conn,
@@ -124,6 +137,7 @@ async def update_member(
         name=name,
         slack_user_id=slack_user_id,
         slack_handle=slack_handle,
+        pushover_user_key=pushover_user_key,
     )
 
 
@@ -286,6 +300,22 @@ async def get_page_delivery(conn: Conn, page_id: int) -> PageDelivery | None:
 
 async def list_pages(conn: Conn, incident_id: IncidentId | None, limit: int) -> list[PageRecord]:
     return await _all(queries.list_pages(conn, incident_id=incident_id, limit=limit))
+
+
+async def set_page_pushover_receipt(
+    conn: Conn, page_id: int, receipt: PushoverReceipt, expires_at: datetime
+) -> None:
+    await queries.set_page_pushover_receipt(
+        conn, page_id=page_id, pushover_receipt=receipt, pushover_expires_at=expires_at
+    )
+
+
+async def list_pending_acknowledgements(conn: Conn) -> list[PendingAcknowledgement]:
+    return await _all(queries.list_pending_acknowledgements(conn))
+
+
+async def acknowledge_page(conn: Conn, page_id: int, acknowledged_at: datetime) -> None:
+    await queries.acknowledge_page(conn, page_id=page_id, acknowledged_at=acknowledged_at)
 
 
 async def get_rotation(conn: Conn, name: str = GLOBAL_ROTATION_NAME) -> Rotation | None:

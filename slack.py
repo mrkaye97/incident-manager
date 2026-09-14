@@ -33,6 +33,10 @@ from internal.types import (
 )
 
 
+def channel_url(channel_id: SlackChannelId) -> str:
+    return f"https://slack.com/app_redirect?channel={channel_id}"
+
+
 class SlackClient:
     def __init__(self, token: str) -> None:
         self._web = AsyncWebClient(
@@ -79,7 +83,6 @@ class SlackClient:
                 raise
 
     async def post_message(self, channel: SlackChannelId | SlackUserId, text: str) -> None:
-        # posting to a user id sends a DM from the bot
         await self._web.chat_postMessage(channel=channel, text=text)
 
     async def respond(self, response_url: str, text: str) -> None:

@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS team_member (
     name TEXT NOT NULL,
     slack_user_id TEXT UNIQUE,
     slack_handle TEXT,
+    pushover_user_key TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -55,6 +56,10 @@ CREATE TABLE IF NOT EXISTS page (
     incident_id UUID REFERENCES incident(id),
     team_member_id BIGINT NOT NULL REFERENCES team_member(id),
     paged_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    pushover_receipt TEXT UNIQUE,
+    pushover_expires_at TIMESTAMPTZ,
+    acknowledged_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

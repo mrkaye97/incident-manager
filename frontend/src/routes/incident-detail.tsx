@@ -159,9 +159,18 @@ export function IncidentDetailPage({ incidentId }: { incidentId: string }) {
             <CardContent className="grid gap-2 text-sm">
               {pages.length === 0 && <p className="text-muted-foreground">Nobody paged.</p>}
               {pages.map((page) => (
-                <div key={page.id} className="flex justify-between gap-2">
-                  <span>{page.member_name}</span>
-                  <span className="text-muted-foreground">{dateTime(page.paged_at)}</span>
+                <div key={page.id} className="flex items-center justify-between gap-2">
+                  <div className="grid">
+                    <span>{page.member_name}</span>
+                    <span className="text-xs text-muted-foreground">{dateTime(page.paged_at)}</span>
+                  </div>
+                  {page.acknowledged_at ? (
+                    <Badge variant="secondary">Acked {dateTime(page.acknowledged_at)}</Badge>
+                  ) : page.pushed ? (
+                    <Badge variant="destructive">Not acked</Badge>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Slack only</span>
+                  )}
                 </div>
               ))}
             </CardContent>

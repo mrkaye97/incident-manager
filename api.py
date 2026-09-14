@@ -29,6 +29,7 @@ from internal.types import (
     OnCallEntry,
     Override,
     PageRecord,
+    PushoverUserKey,
     Rotation,
     Shift,
     SlackUserId,
@@ -226,6 +227,7 @@ class MemberInput(BaseModel):
     name: str = Field(min_length=1)
     slack_user_id: SlackUserId | None = None
     slack_handle: str | None = None
+    pushover_user_key: PushoverUserKey | None = None
 
 
 class TriggeredRun(BaseModel):
@@ -242,7 +244,9 @@ async def list_members(pool: PoolDep) -> list[Member]:
 async def create_member(pool: PoolDep, body: MemberInput) -> Member:
     try:
         async with pool.acquire() as conn:
-            return await db.create_member(conn, body.name, body.slack_user_id, body.slack_handle)
+            return await db.create_member(
+                conn, body.name, body.slack_user_id, body.slack_handle, body.pushover_user_key
+            )
     except UniqueViolationError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, "slack user id already in use") from e
 
@@ -252,7 +256,12 @@ async def update_member(pool: PoolDep, member_id: TeamMemberId, body: MemberInpu
     try:
         async with pool.acquire() as conn:
             member = await db.update_member(
-                conn, member_id, body.name, body.slack_user_id, body.slack_handle
+                conn,
+                member_id,
+                body.name,
+                body.slack_user_id,
+                body.slack_handle,
+                body.pushover_user_key,
             )
     except UniqueViolationError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, "slack user id already in use") from e

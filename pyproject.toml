@@ -12,6 +12,7 @@ dependencies = [
     "fastapi (>=0.139.0,<1)",
     "uvicorn[standard] (>=0.49.0,<1)",
     "aiosql (>=15.0,<16.0)",
+    "aiohttp (>=3.14.1,<4)",
 ]
 
 

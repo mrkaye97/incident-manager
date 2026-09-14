@@ -7,6 +7,8 @@ from asyncpg import Connection
 import db
 from commands import mention, open_incident
 from internal.types import AlertState, HyperDXAlert, IncidentId
+from paging import push_page
+from pushover import PushoverClient
 from slack import SlackClient
 
 logger = logging.getLogger("incident-bot")
@@ -24,7 +26,9 @@ async def _record(conn: Connection, alert: HyperDXAlert, incident_id: IncidentId
     await db.record_alert(conn, alert.title, alert.state, alert.body, alert.link, incident_id)
 
 
-async def handle_alert(conn: Connection, slack: SlackClient, alert: HyperDXAlert) -> None:
+async def handle_alert(
+    conn: Connection, slack: SlackClient, pushover: PushoverClient | None, alert: HyperDXAlert
+) -> None:
     existing = await db.find_open_incident_by_alert_title(conn, alert.title)
 
     if alert.state != AlertState.ALERT:
@@ -82,7 +86,8 @@ async def handle_alert(conn: Connection, slack: SlackClient, alert: HyperDXAlert
     )
 
     await _record(conn, alert, incident_id)
-    await db.create_page(conn, lead_id, incident_id)
+    page = await db.create_page(conn, lead_id, incident_id)
+    await push_page(conn, pushover, page.id, "HyperDX", alert.body)
 
     await slack.post_message(
         channel_id,

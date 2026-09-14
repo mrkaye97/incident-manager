@@ -17,6 +17,8 @@ from internal.types import (
     Subcommand,
     TeamMemberId,
 )
+from paging import cancel_incident_pages, push_page
+from pushover import PushoverClient
 from slack import SlackClient
 
 logger = logging.getLogger("incident-bot")
@@ -131,7 +133,12 @@ async def create_incident(
         )
 
 
-async def page_member(conn: Connection, slack: SlackClient, payload: InteractivityPayload) -> None:
+async def page_member(
+    conn: Connection,
+    slack: SlackClient,
+    pushover: PushoverClient | None,
+    payload: InteractivityPayload,
+) -> None:
     channel_id = payload.metadata.channel_id
     target = payload.user_field("target")
 
@@ -150,10 +157,12 @@ async def page_member(conn: Connection, slack: SlackClient, payload: Interactivi
         return
 
     page = await db.create_page(conn, member_id, incident_id)
+    reason = payload.field("reason")
 
+    await push_page(conn, pushover, page.id, payload.user.name or payload.user.id, reason)
     await slack.post_message(
         channel_id,
-        page_text(target, mention(payload.user.id), page.slack_channel_id, payload.field("reason")),
+        page_text(target, mention(payload.user.id), page.slack_channel_id, reason),
     )
 
 
@@ -169,8 +178,14 @@ def page_text(
 
 
 async def deliver_page(
-    conn: Connection, slack: SlackClient, page_id: int, reason: str | None, paged_by: str
+    conn: Connection,
+    slack: SlackClient,
+    pushover: PushoverClient | None,
+    page_id: int,
+    reason: str | None,
+    paged_by: str,
 ) -> None:
+    await push_page(conn, pushover, page_id, paged_by, reason)
     page = await db.get_page_delivery(conn, page_id)
 
     if page is None:
@@ -258,19 +273,29 @@ async def create_action_item(
 
 
 async def resolve_incident(
-    conn: Connection, slack: SlackClient, incident: Incident, actor_slack_id: SlackUserId
+    conn: Connection,
+    slack: SlackClient,
+    pushover: PushoverClient | None,
+    incident: Incident,
+    actor_slack_id: SlackUserId,
 ) -> None:
     await db.resolve_incident(conn, incident.id)
-    await announce_resolution(conn, slack, incident.id, mention(actor_slack_id))
+    await announce_resolution(conn, slack, pushover, incident.id, mention(actor_slack_id))
 
 
 async def announce_resolution(
-    conn: Connection, slack: SlackClient, incident_id: IncidentId, resolved_by: str
+    conn: Connection,
+    slack: SlackClient,
+    pushover: PushoverClient | None,
+    incident_id: IncidentId,
+    resolved_by: str,
 ) -> None:
     incident = await db.get_incident(conn, incident_id)
 
     if incident is None:
         raise ValueError(f"incident {incident_id} not found")
+
+    await cancel_incident_pages(pushover, incident_id)
 
     note = (
         f" {incident.open_action_items} action item(s) still open."

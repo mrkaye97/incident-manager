@@ -442,6 +442,8 @@ export interface components {
             slack_user_id: string | null;
             /** Slack Handle */
             slack_handle: string | null;
+            /** Pushover User Key */
+            pushover_user_key: string | null;
         };
         /** MemberInput */
         MemberInput: {
@@ -451,6 +453,8 @@ export interface components {
             slack_user_id?: string | null;
             /** Slack Handle */
             slack_handle?: string | null;
+            /** Pushover User Key */
+            pushover_user_key?: string | null;
         };
         /** OnCallEntry */
         OnCallEntry: {
@@ -525,6 +529,10 @@ export interface components {
              * Format: date-time
              */
             paged_at: string;
+            /** Pushed */
+            pushed: boolean;
+            /** Acknowledged At */
+            acknowledged_at: string | null;
         };
         /** PageResult */
         PageResult: {

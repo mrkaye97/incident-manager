@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { PencilIcon, PlusIcon, RefreshCwIcon } from "lucide-react"
 import { useState } from "react"
 
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -50,6 +51,7 @@ export function TeamPage() {
               <TableHead>Name</TableHead>
               <TableHead>Slack handle</TableHead>
               <TableHead>Slack user ID</TableHead>
+              <TableHead>Phone paging</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -59,6 +61,13 @@ export function TeamPage() {
                 <TableCell className="font-medium">{member.name}</TableCell>
                 <TableCell>{member.slack_handle ? `@${member.slack_handle}` : "—"}</TableCell>
                 <TableCell className="font-mono text-xs">{member.slack_user_id ?? "—"}</TableCell>
+                <TableCell>
+                  {member.pushover_user_key ? (
+                    <Badge variant="secondary">Pushover</Badge>
+                  ) : (
+                    <span className="text-muted-foreground">Slack only</span>
+                  )}
+                </TableCell>
                 <TableCell className="text-right">
                   <MemberDialog member={member} />
                 </TableCell>
@@ -76,6 +85,7 @@ function MemberDialog({ member }: { member?: Member }) {
   const [name, setName] = useState("")
   const [slackUserId, setSlackUserId] = useState("")
   const [slackHandle, setSlackHandle] = useState("")
+  const [pushoverUserKey, setPushoverUserKey] = useState("")
   const save = useSaveMember()
 
   const onOpenChange = (next: boolean) => {
@@ -84,6 +94,7 @@ function MemberDialog({ member }: { member?: Member }) {
       setName(member?.name ?? "")
       setSlackUserId(member?.slack_user_id ?? "")
       setSlackHandle(member?.slack_handle ?? "")
+      setPushoverUserKey(member?.pushover_user_key ?? "")
     }
   }
 
@@ -95,6 +106,7 @@ function MemberDialog({ member }: { member?: Member }) {
         name: name.trim(),
         slack_user_id: slackUserId.trim() || null,
         slack_handle: slackHandle.trim().replace(/^@/, "") || null,
+        pushover_user_key: pushoverUserKey.trim() || null,
       },
       { onSuccess: () => setOpen(false) },
     )
@@ -137,6 +149,16 @@ function MemberDialog({ member }: { member?: Member }) {
               id="member-slack-handle"
               value={slackHandle}
               onChange={(e) => setSlackHandle(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="member-pushover">Pushover user key</Label>
+            <Input
+              id="member-pushover"
+              className="font-mono"
+              placeholder="Shown on the Pushover app's home screen"
+              value={pushoverUserKey}
+              onChange={(e) => setPushoverUserKey(e.target.value)}
             />
           </div>
           <DialogFooter>

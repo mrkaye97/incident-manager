@@ -12,14 +12,14 @@ RETURNING id;
 
 -- name: list_members()
 -- record_class: Member
-SELECT id, name, slack_user_id, slack_handle
+SELECT id, name, slack_user_id, slack_handle, pushover_user_key
 FROM team_member
 ORDER BY name;
 
 
 -- name: get_member(member_id)^
 -- record_class: Member
-SELECT id, name, slack_user_id, slack_handle
+SELECT id, name, slack_user_id, slack_handle, pushover_user_key
 FROM team_member
 WHERE id = :member_id;
 
@@ -28,16 +28,21 @@ WHERE id = :member_id;
 SELECT id FROM team_member WHERE id = ANY(:member_ids::BIGINT[]);
 
 
--- name: create_member(name, slack_user_id, slack_handle)^
+-- name: create_member(name, slack_user_id, slack_handle, pushover_user_key)^
 -- record_class: Member
-INSERT INTO team_member (name, slack_user_id, slack_handle)
-VALUES (:name, :slack_user_id, :slack_handle)
-RETURNING id, name, slack_user_id, slack_handle;
+INSERT INTO team_member (name, slack_user_id, slack_handle, pushover_user_key)
+VALUES (:name, :slack_user_id, :slack_handle, :pushover_user_key)
+RETURNING id, name, slack_user_id, slack_handle, pushover_user_key;
 
 
--- name: update_member(member_id, name, slack_user_id, slack_handle)^
+-- name: update_member(member_id, name, slack_user_id, slack_handle, pushover_user_key)^
 -- record_class: Member
 UPDATE team_member
-SET name = :name, slack_user_id = :slack_user_id, slack_handle = :slack_handle, updated_at = now()
+SET
+    name = :name,
+    slack_user_id = :slack_user_id,
+    slack_handle = :slack_handle,
+    pushover_user_key = :pushover_user_key,
+    updated_at = now()
 WHERE id = :member_id
-RETURNING id, name, slack_user_id, slack_handle;
+RETURNING id, name, slack_user_id, slack_handle, pushover_user_key;

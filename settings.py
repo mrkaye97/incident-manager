@@ -6,6 +6,8 @@ class Settings(BaseSettings):
 
     slack_bot_oauth_token: str
 
+    pushover_app_token: str
+
     status_page_url: str = "https://status.example.com"
 
     cors_origins: list[str] = ["http://localhost:3000"]

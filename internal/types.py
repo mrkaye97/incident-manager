@@ -14,6 +14,8 @@ IncidentId = NewType("IncidentId", UUID)
 TeamMemberId = NewType("TeamMemberId", int)
 SlackUserId = NewType("SlackUserId", str)
 SlackChannelId = NewType("SlackChannelId", str)
+PushoverUserKey = NewType("PushoverUserKey", str)
+PushoverReceipt = NewType("PushoverReceipt", str)
 
 
 Conn: TypeAlias = "Connection[Record] | PoolConnectionProxy[Record]"
@@ -29,6 +31,7 @@ class Member(BaseModel):
     name: str
     slack_user_id: SlackUserId | None
     slack_handle: str | None
+    pushover_user_key: PushoverUserKey | None
 
 
 class Incident(BaseModel):
@@ -93,6 +96,10 @@ class PageDelivery(BaseModel):
     id: int
     member_name: str
     slack_user_id: SlackUserId | None
+    pushover_user_key: PushoverUserKey | None
+    pushover_receipt: PushoverReceipt | None
+    incident_id: IncidentId | None
+    incident_name: str | None
     slack_channel_id: SlackChannelId | None
 
 
@@ -102,6 +109,13 @@ class PageRecord(BaseModel):
     team_member_id: TeamMemberId
     member_name: str
     paged_at: datetime
+    pushed: bool
+    acknowledged_at: datetime | None
+
+
+class PendingAcknowledgement(BaseModel):
+    id: int
+    pushover_receipt: PushoverReceipt
 
 
 class Rotation(BaseModel):

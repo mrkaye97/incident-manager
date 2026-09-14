@@ -38,6 +38,8 @@ from internal.types import (
     ViewMetadata,
 )
 from members import backfill
+from paging import sync_acknowledgements
+from pushover import PushoverClient
 from settings import Settings
 from slack import (
     SlackClient,
@@ -53,9 +55,16 @@ hatchet = Hatchet()
 
 
 class Lifespan:
-    def __init__(self, pool: Pool, slack: SlackClient, settings: Settings) -> None:
+    def __init__(
+        self,
+        pool: Pool,
+        slack: SlackClient,
+        pushover: PushoverClient | None,
+        settings: Settings,
+    ) -> None:
         self.pool = pool
         self.slack = slack
+        self.pushover = pushover
         self.settings = settings
 
 
@@ -128,7 +137,7 @@ async def handle_incident_slash_command(
                     "Run `resolve` from an open incident's channel to resolve it.",
                 )
                 return
-            await resolve_incident(conn, lifespan.slack, incident, event.user_id)
+            await resolve_incident(conn, lifespan.slack, lifespan.pushover, incident, event.user_id)
         case Subcommand.COMPLETE:
             incident = await db.find_open_incident_by_channel_id(conn, event.channel_id)
             if incident is None:
@@ -165,7 +174,7 @@ async def handle_interactivity(
         case CallbackID.CREATE_INCIDENT:
             await create_incident(conn, lifespan.slack, payload)
         case CallbackID.PAGE_MEMBER:
-            await page_member(conn, lifespan.slack, payload)
+            await page_member(conn, lifespan.slack, lifespan.pushover, payload)
         case CallbackID.UPDATE_DESCRIPTION:
             await update_description(conn, lifespan.slack, payload)
         case CallbackID.CREATE_ACTION_ITEM:
@@ -188,7 +197,7 @@ async def handle_critical_alert(
     conn: ConnectionDep,
     lifespan: LifespanDep,
 ) -> None:
-    await handle_alert(conn, lifespan.slack, alert)
+    await handle_alert(conn, lifespan.slack, lifespan.pushover, alert)
 
 
 WEB_UI_ACTOR = "someone via the web UI"
@@ -201,7 +210,9 @@ async def deliver_page_notification(
     conn: ConnectionDep,
     lifespan: LifespanDep,
 ) -> None:
-    await deliver_page(conn, lifespan.slack, input.page_id, input.reason, WEB_UI_ACTOR)
+    await deliver_page(
+        conn, lifespan.slack, lifespan.pushover, input.page_id, input.reason, WEB_UI_ACTOR
+    )
 
 
 @hatchet.task(input_validator=AnnounceResolutionInput)
@@ -211,7 +222,9 @@ async def announce_incident_resolution(
     conn: ConnectionDep,
     lifespan: LifespanDep,
 ) -> None:
-    await announce_resolution(conn, lifespan.slack, input.incident_id, WEB_UI_ACTOR)
+    await announce_resolution(
+        conn, lifespan.slack, lifespan.pushover, input.incident_id, WEB_UI_ACTOR
+    )
 
 
 @hatchet.task(on_crons=["0 6 * * *"])
@@ -224,12 +237,24 @@ async def backfill_members(
     await backfill(conn, lifespan.slack)
 
 
+@hatchet.task(on_crons=["* * * * *"])
+async def sync_page_acknowledgements(
+    _: EmptyModel,
+    _ctx: Context,
+    conn: ConnectionDep,
+    lifespan: LifespanDep,
+) -> None:
+    if lifespan.pushover is not None:
+        await sync_acknowledgements(conn, lifespan.pushover)
+
+
 async def lifespan() -> AsyncGenerator[Lifespan, None]:
     settings = Settings()  # ty: ignore[missing-argument]
     pool = await create_pool(dsn=settings.database_url)
     slack = SlackClient(settings.slack_bot_oauth_token)
+    pushover = PushoverClient(settings.pushover_app_token) if settings.pushover_app_token else None
     try:
-        yield Lifespan(pool, slack, settings)
+        yield Lifespan(pool, slack, pushover, settings)
     finally:
         await pool.close()
 
@@ -244,6 +269,7 @@ def main() -> None:
             backfill_members,
             deliver_page_notification,
             announce_incident_resolution,
+            sync_page_acknowledgements,
         ],
         lifespan=lifespan,
     )

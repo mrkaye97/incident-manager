@@ -1,345 +1,342 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from datetime import datetime
-from enum import StrEnum
+from pathlib import Path
+from typing import Any, TypeVar
 
-from asyncpg import Connection
+import aiosql
 from pydantic import BaseModel
 
+from internal.types import (
+    ActionItem,
+    ActionItemOption,
+    AlertRecord,
+    Conn,
+    Incident,
+    IncidentId,
+    IncidentOption,
+    IncidentStatus,
+    IncidentSummary,
+    Member,
+    OnCallEntry,
+    Override,
+    Page,
+    PageDelivery,
+    PageRecord,
+    Rotation,
+    SlackChannelId,
+    SlackUserId,
+    TeamMemberId,
+)
 
-class IncidentStatus(StrEnum):
-    OPEN = "OPEN"
-    RESOLVED = "RESOLVED"
-
-
-class OnCallEntry(BaseModel):
-    name: str
-    slack_user_id: str | None
-    escalation_priority: int
-
+QUERIES_DIR = Path(__file__).parent / "queries"
 
 ESCALATION_LEVELS = 2
 GLOBAL_ROTATION_NAME = "default"
 
-
-class Rotation(BaseModel):
-    id: int
-    member_ids: list[int]
-    period_days: int
-    anchor: datetime
+T = TypeVar("T")
 
 
 class UnexpectedDBError(Exception):
     """Catchall for unexpected error cases that asyncpg can't figure out (since it's executing plain sql)"""
 
 
-async def member_id_by_slack_id(conn: Connection, slack_user_id: str) -> int | None:
-    row = await conn.fetchrow("SELECT id FROM team_member WHERE slack_user_id = $1", slack_user_id)
-    return row["id"] if row else None
+RECORD_CLASSES: dict[str, type[BaseModel]] = {
+    model.__name__: model
+    for model in (
+        Member,
+        Incident,
+        IncidentOption,
+        IncidentSummary,
+        ActionItemOption,
+        ActionItem,
+        AlertRecord,
+        Page,
+        PageDelivery,
+        PageRecord,
+        Rotation,
+        OnCallEntry,
+        Override,
+    )
+}
+
+queries: Any = aiosql.from_path(QUERIES_DIR, "asyncpg", record_classes=RECORD_CLASSES)
+
+
+async def _all(rows: AsyncIterator[T]) -> list[T]:
+    return [row async for row in rows]
+
+
+async def member_id_by_slack_id(conn: Conn, slack_user_id: SlackUserId) -> TeamMemberId | None:
+    return await queries.member_id_by_slack_id(conn, slack_user_id=slack_user_id)
 
 
 async def upsert_member(
-    conn: Connection, slack_user_id: str, name: str, slack_handle: str | None
-) -> int:
-    row = await conn.fetchrow(
-        """
-        INSERT INTO team_member (name, slack_user_id, slack_handle)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (slack_user_id)
-        DO UPDATE SET name = EXCLUDED.name, slack_handle = EXCLUDED.slack_handle
-        RETURNING id
-        """,
-        name,
-        slack_user_id,
-        slack_handle,
+    conn: Conn, slack_user_id: SlackUserId, name: str, slack_handle: str | None
+) -> TeamMemberId:
+    member_id = await queries.upsert_member(
+        conn, name=name, slack_user_id=slack_user_id, slack_handle=slack_handle
     )
 
-    if not row:
+    if member_id is None:
         raise UnexpectedDBError(f"Failed to upsert member with slack_user_id {slack_user_id}")
 
-    return row["id"]
+    return member_id
+
+
+async def list_members(conn: Conn) -> list[Member]:
+    return await _all(queries.list_members(conn))
+
+
+async def get_member(conn: Conn, member_id: TeamMemberId) -> Member | None:
+    return await queries.get_member(conn, member_id=member_id)
+
+
+async def missing_member_ids(conn: Conn, member_ids: list[TeamMemberId]) -> set[TeamMemberId]:
+    rows = await _all(queries.existing_member_ids(conn, member_ids=member_ids))
+    return set(member_ids) - {row["id"] for row in rows}
+
+
+async def create_member(
+    conn: Conn, name: str, slack_user_id: SlackUserId | None, slack_handle: str | None
+) -> Member:
+    member = await queries.create_member(
+        conn, name=name, slack_user_id=slack_user_id, slack_handle=slack_handle
+    )
+
+    if member is None:
+        raise UnexpectedDBError(f"Failed to create member {name}")
+
+    return member
+
+
+async def update_member(
+    conn: Conn,
+    member_id: TeamMemberId,
+    name: str,
+    slack_user_id: SlackUserId | None,
+    slack_handle: str | None,
+) -> Member | None:
+    return await queries.update_member(
+        conn,
+        member_id=member_id,
+        name=name,
+        slack_user_id=slack_user_id,
+        slack_handle=slack_handle,
+    )
 
 
 async def create_incident(
-    conn: Connection, name: str, slack_channel_id: str, lead_member_id: int, description: str | None
-) -> int:
-    row = await conn.fetchrow(
-        """
-        INSERT INTO incident (name, slack_channel_id, lead, description)
-        VALUES ($1, $2, $3, $4)
-        RETURNING id
-        """,
-        name,
-        slack_channel_id,
-        lead_member_id,
-        description,
+    conn: Conn,
+    name: str,
+    slack_channel_id: SlackChannelId,
+    lead_member_id: TeamMemberId,
+    description: str | None,
+) -> IncidentId:
+    incident_id = await queries.create_incident(
+        conn,
+        name=name,
+        slack_channel_id=slack_channel_id,
+        lead_member_id=lead_member_id,
+        description=description,
     )
 
-    if not row:
+    if incident_id is None:
         raise UnexpectedDBError(f"Failed to create incident with name {name}")
 
-    return row["id"]
-
-
-class IncidentOption(BaseModel):
-    id: int
-    name: str
-    slack_channel_id: str
-
-
-class Incident(BaseModel):
-    id: int
-    name: str
-    slack_channel_id: str
-    description: str | None
+    return incident_id
 
 
 async def find_open_incident_by_channel_id(
-    conn: Connection, slack_channel_id: str
+    conn: Conn, slack_channel_id: SlackChannelId
 ) -> Incident | None:
-    row = await conn.fetchrow(
-        """
-        SELECT id, name, slack_channel_id, description
-        FROM incident
-        WHERE slack_channel_id = $1 AND status = 'OPEN'
-        """,
-        slack_channel_id,
-    )
-    return Incident.model_validate(dict(row)) if row else None
+    return await queries.find_open_incident_by_channel_id(conn, slack_channel_id=slack_channel_id)
 
 
-async def find_open_incident_by_alert_title(conn: Connection, title: str) -> Incident | None:
-    row = await conn.fetchrow(
-        """
-        SELECT i.id, i.name, i.slack_channel_id, i.description
-        FROM incident i
-        JOIN alert a ON a.incident_id = i.id
-        WHERE a.title = $1 AND i.status = 'OPEN'
-        ORDER BY i.start_time DESC
-        LIMIT 1
-        """,
-        title,
-    )
-    return Incident.model_validate(dict(row)) if row else None
+async def find_open_incident_by_alert_title(conn: Conn, title: str) -> Incident | None:
+    return await queries.find_open_incident_by_alert_title(conn, title=title)
 
 
-async def record_alert(
-    conn: Connection,
-    title: str,
-    state: str | None,
-    body: str | None,
-    source_url: str | None,
-    incident_id: int | None,
-) -> int:
-    row = await conn.fetchrow(
-        """
-        INSERT INTO alert (title, state, body, source_url, incident_id)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id
-        """,
-        title,
-        state,
-        body,
-        source_url,
-        incident_id,
-    )
-
-    if not row:
-        raise UnexpectedDBError(f"Failed to record alert with title {title}")
-
-    return row["id"]
+async def list_open_incidents(conn: Conn) -> list[IncidentOption]:
+    return await _all(queries.list_open_incidents(conn))
 
 
-async def update_incident_description(conn: Connection, incident_id: int, description: str) -> None:
-    await conn.execute(
-        """
-        UPDATE incident
-        SET description = $2, updated_at = now()
-        WHERE id = $1
-        """,
-        incident_id,
-        description,
+async def list_incidents(
+    conn: Conn, status: IncidentStatus | None, limit: int
+) -> list[IncidentSummary]:
+    return await _all(queries.list_incidents(conn, status=status, limit=limit))
+
+
+async def get_incident(conn: Conn, incident_id: IncidentId) -> IncidentSummary | None:
+    return await queries.get_incident(conn, incident_id=incident_id)
+
+
+async def update_incident_description(
+    conn: Conn, incident_id: IncidentId, description: str
+) -> None:
+    await queries.update_incident_description(
+        conn, incident_id=incident_id, description=description
     )
 
 
-async def resolve_incident(conn: Connection, incident_id: int) -> None:
-    await conn.execute(
-        """
-        UPDATE incident
-        SET status = 'RESOLVED', end_time = now(), updated_at = now()
-        WHERE id = $1 AND status = 'OPEN'
-        """,
-        incident_id,
-    )
+async def resolve_incident(conn: Conn, incident_id: IncidentId) -> IncidentSummary | None:
+    """Resolve an open incident, returning it, or None if there's no open incident with that id."""
+    if await queries.resolve_incident(conn, incident_id=incident_id) is None:
+        return None
+
+    return await get_incident(conn, incident_id)
 
 
-class ActionItemOption(BaseModel):
-    id: int
-    description: str
+async def list_open_action_items(conn: Conn, incident_id: IncidentId) -> list[ActionItemOption]:
+    return await _all(queries.list_open_action_items(conn, incident_id=incident_id))
 
 
-async def list_open_action_items(conn: Connection, incident_id: int) -> list[ActionItemOption]:
-    rows = await conn.fetch(
-        """
-        SELECT id, description
-        FROM incident_action_item
-        WHERE incident_id = $1 AND is_completed = FALSE
-        ORDER BY created_at
-        """,
-        incident_id,
-    )
-    return [ActionItemOption.model_validate(dict(row)) for row in rows]
-
-
-async def complete_action_items(conn: Connection, action_item_ids: list[int]) -> int:
-    rows = await conn.fetch(
-        """
-        UPDATE incident_action_item
-        SET is_completed = TRUE, updated_at = now()
-        WHERE id = ANY($1::BIGINT[]) AND is_completed = FALSE
-        RETURNING id
-        """,
-        action_item_ids,
-    )
+async def complete_action_items(conn: Conn, action_item_ids: list[int]) -> int:
+    rows = await _all(queries.complete_action_items(conn, action_item_ids=action_item_ids))
     return len(rows)
 
 
 async def create_action_item(
-    conn: Connection, incident_id: int, description: str, assignee_member_id: int | None
+    conn: Conn,
+    incident_id: IncidentId,
+    description: str,
+    assignee_member_id: TeamMemberId | None,
 ) -> int:
-    row = await conn.fetchrow(
-        """
-        INSERT INTO incident_action_item (incident_id, description, assignee_team_member_id)
-        VALUES ($1, $2, $3)
-        RETURNING id
-        """,
-        incident_id,
-        description,
-        assignee_member_id,
+    action_item_id = await queries.create_action_item(
+        conn,
+        incident_id=incident_id,
+        description=description,
+        assignee_member_id=assignee_member_id,
     )
 
-    if not row:
+    if action_item_id is None:
         raise UnexpectedDBError(f"Failed to create action item for incident {incident_id}")
 
-    return row["id"]
+    return action_item_id
 
 
-async def list_open_incidents(conn: Connection) -> list[IncidentOption]:
-    rows = await conn.fetch(
-        """
-        SELECT id, name, slack_channel_id
-        FROM incident
-        WHERE status = 'OPEN'
-        ORDER BY start_time DESC
-        """,
-    )
-    return [IncidentOption.model_validate(dict(row)) for row in rows]
+async def list_action_items(
+    conn: Conn, incident_id: IncidentId | None = None, open_only: bool = False
+) -> list[ActionItem]:
+    return await _all(queries.list_action_items(conn, incident_id=incident_id, open_only=open_only))
 
 
-class Page(BaseModel):
-    id: int
-    incident_id: int | None
-    slack_channel_id: str | None
+async def get_action_item(conn: Conn, action_item_id: int) -> ActionItem | None:
+    return await queries.get_action_item(conn, action_item_id=action_item_id)
 
 
-async def create_page(conn: Connection, team_member_id: int, incident_id: int | None) -> Page:
-    row = await conn.fetchrow(
-        """
-        WITH page AS (
-            INSERT INTO page (team_member_id, incident_id)
-            VALUES ($1, $2)
-            RETURNING id
-        ), incident AS (
-            SELECT *
-            FROM incident
-            WHERE id = $2
-        )
-
-        SELECT p.id, i.slack_channel_id, i.id AS incident_id
-        FROM page p, incident i
-        """,
-        team_member_id,
-        incident_id,
+async def update_action_item(
+    conn: Conn,
+    action_item_id: int,
+    description: str,
+    is_completed: bool,
+    assignee_member_id: TeamMemberId | None,
+) -> None:
+    await queries.update_action_item(
+        conn,
+        action_item_id=action_item_id,
+        description=description,
+        is_completed=is_completed,
+        assignee_member_id=assignee_member_id,
     )
 
-    if not row:
+
+async def record_alert(
+    conn: Conn,
+    title: str,
+    state: str | None,
+    body: str | None,
+    source_url: str | None,
+    incident_id: IncidentId | None,
+) -> int:
+    alert_id = await queries.record_alert(
+        conn,
+        title=title,
+        state=state,
+        body=body,
+        source_url=source_url,
+        incident_id=incident_id,
+    )
+
+    if alert_id is None:
+        raise UnexpectedDBError(f"Failed to record alert with title {title}")
+
+    return alert_id
+
+
+async def list_incident_alerts(conn: Conn, incident_id: IncidentId) -> list[AlertRecord]:
+    return await _all(queries.list_incident_alerts(conn, incident_id=incident_id))
+
+
+async def create_page(
+    conn: Conn, team_member_id: TeamMemberId, incident_id: IncidentId | None
+) -> Page:
+    page = await queries.create_page(conn, team_member_id=team_member_id, incident_id=incident_id)
+
+    if page is None:
         raise UnexpectedDBError(f"Failed to create page for team_member_id {team_member_id}")
 
-    return Page.model_validate(dict(row))
+    return page
+
+
+async def get_page_delivery(conn: Conn, page_id: int) -> PageDelivery | None:
+    return await queries.get_page_delivery(conn, page_id=page_id)
+
+
+async def list_pages(conn: Conn, incident_id: IncidentId | None, limit: int) -> list[PageRecord]:
+    return await _all(queries.list_pages(conn, incident_id=incident_id, limit=limit))
+
+
+async def get_rotation(conn: Conn, name: str = GLOBAL_ROTATION_NAME) -> Rotation | None:
+    return await queries.get_rotation(conn, name=name)
 
 
 async def upsert_rotation(
-    conn: Connection,
-    member_ids: list[int],
+    conn: Conn,
+    member_ids: list[TeamMemberId],
     period_days: int,
     anchor: datetime,
     name: str = GLOBAL_ROTATION_NAME,
 ) -> Rotation:
-    row = await conn.fetchrow(
-        """
-        INSERT INTO on_call_rotation (name, member_ids, period_days, anchor)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (name) DO UPDATE SET
-            member_ids = EXCLUDED.member_ids,
-            period_days = EXCLUDED.period_days,
-            anchor = EXCLUDED.anchor
-        RETURNING id, member_ids, period_days, anchor
-        """,
-        name,
-        member_ids,
-        period_days,
-        anchor,
+    rotation = await queries.upsert_rotation(
+        conn, name=name, member_ids=member_ids, period_days=period_days, anchor=anchor
     )
 
-    if not row:
+    if rotation is None:
         raise UnexpectedDBError("Failed to upsert on-call rotation")
 
-    return Rotation.model_validate(dict(row))
+    return rotation
 
 
-async def current_oncall(conn: Connection) -> list[OnCallEntry]:
-    rows = await conn.fetch(
-        """
-        WITH rotation AS (
-            SELECT
-                member_ids,
-                array_length(member_ids, 1) AS num_members,
-                LEAST($1::INT, array_length(member_ids, 1)) AS depth,
-                -- index of the window covering now(): floor((now - anchor) / period)
-                floor(
-                    extract(epoch FROM now() - anchor)
-                    / extract(epoch FROM make_interval(days => period_days))
-                )::BIGINT AS k
-            FROM on_call_rotation
-            WHERE now() >= anchor
-            LIMIT 1
-        ), active_override AS (
-            SELECT escalation_priority, team_member_id
-            FROM on_call_override
-            WHERE shift @> now()
-        ), oncall AS (
-            -- overrides win at their priority (and may add priorities beyond the stack)
-            SELECT escalation_priority, team_member_id
-            FROM active_override
-            UNION ALL
-            -- scheduled seat for each priority the round-robin covers, unless overridden
-            SELECT
-                priority AS escalation_priority,
-                (
-                    SELECT r.member_ids[((r.k + priority - 1) % r.num_members)::INT + 1]
-                    FROM rotation r
-                ) AS team_member_id
-            -- depth is bounded by how many members are in the rotation, so this is fine to do
-            FROM generate_series(1, (SELECT depth FROM rotation)) AS priority
-            WHERE priority NOT IN (SELECT escalation_priority FROM active_override)
-        )
+async def current_oncall(conn: Conn) -> list[OnCallEntry]:
+    return await _all(queries.current_oncall(conn, escalation_levels=ESCALATION_LEVELS))
 
-        SELECT tm.name, tm.slack_user_id, oncall.escalation_priority
-        FROM oncall
-        JOIN team_member tm ON tm.id = oncall.team_member_id
-        ORDER BY oncall.escalation_priority
-        """,
-        ESCALATION_LEVELS,
+
+async def list_overrides(conn: Conn, start: datetime, end: datetime) -> list[Override]:
+    return await _all(queries.list_overrides(conn, start=start, end=end))
+
+
+async def create_override(
+    conn: Conn,
+    team_member_id: TeamMemberId,
+    start: datetime,
+    end: datetime,
+    escalation_priority: int,
+) -> Override:
+    override = await queries.create_override(
+        conn,
+        team_member_id=team_member_id,
+        start=start,
+        end=end,
+        escalation_priority=escalation_priority,
     )
 
-    return [OnCallEntry.model_validate(dict(r)) for r in rows]
+    if override is None:
+        raise UnexpectedDBError(f"Failed to create override for member {team_member_id}")
+
+    return override
+
+
+async def delete_override(conn: Conn, override_id: int) -> bool:
+    return await queries.delete_override(conn, override_id=override_id) != "DELETE 0"

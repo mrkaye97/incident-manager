@@ -9,8 +9,9 @@ from internal.types import IncidentId, PushoverReceipt, PushoverUserKey
 
 API = "https://api.pushover.net/1"
 
-RETRY_SECONDS = 60
-EXPIRE_SECONDS = 60 * 60
+RETRY_SECONDS = 30
+EXPIRE_SECONDS = 50 * RETRY_SECONDS
+PAGE_SOUND = "persistent"
 
 
 class PushoverError(Exception):
@@ -62,6 +63,7 @@ class PushoverClient:
             "title": title[:250],
             "message": message[:1024],
             "priority": "2",
+            "sound": PAGE_SOUND,
             "retry": str(RETRY_SECONDS),
             "expire": str(EXPIRE_SECONDS),
         }

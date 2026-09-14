@@ -56,3 +56,10 @@ async def sync_acknowledgements(conn: Connection, pushover: PushoverClient) -> N
 
         if status.acknowledged_at is not None:
             await db.acknowledge_page(conn, page.id, status.acknowledged_at)
+            await _silence_chain(conn, pushover, page.root_page_id)
+
+
+async def _silence_chain(conn: Connection, pushover: PushoverClient, root_page_id: int) -> None:
+    for page in await db.list_ringing_chain_pages(conn, root_page_id):
+        await pushover.cancel_receipt(page.pushover_receipt)
+        await db.stop_page_alert(conn, page.id)

@@ -7,6 +7,7 @@ from asyncpg import Connection
 import actions
 import db
 from actions import ActionError
+from escalation import page_and_escalate
 from internal.types import (
     Actor,
     AlertState,
@@ -76,7 +77,7 @@ async def handle_alert(
         return
 
     await _record(conn, alert, incident.id)
-    await actions.page_member(
+    await page_and_escalate(
         conn,
         slack,
         pushover,

@@ -13,6 +13,7 @@ from internal.types import (
     ActionItemOption,
     AlertRecord,
     Conn,
+    EscalationState,
     Incident,
     IncidentId,
     IncidentOption,
@@ -62,6 +63,7 @@ RECORD_CLASSES: dict[str, type[BaseModel]] = {
         Rotation,
         OnCallEntry,
         Override,
+        EscalationState,
     )
 }
 
@@ -283,9 +285,19 @@ async def list_incident_alerts(conn: Conn, incident_id: IncidentId) -> list[Aler
 
 
 async def create_page(
-    conn: Conn, team_member_id: TeamMemberId, incident_id: IncidentId | None
+    conn: Conn,
+    team_member_id: TeamMemberId,
+    incident_id: IncidentId | None,
+    root_page_id: int | None = None,
+    escalation_step: int | None = None,
 ) -> Page:
-    page = await queries.create_page(conn, team_member_id=team_member_id, incident_id=incident_id)
+    page = await queries.create_page(
+        conn,
+        team_member_id=team_member_id,
+        incident_id=incident_id,
+        root_page_id=root_page_id,
+        escalation_step=escalation_step,
+    )
 
     if page is None:
         raise UnexpectedDBError(f"Failed to create page for team_member_id {team_member_id}")
@@ -315,6 +327,18 @@ async def list_pending_acknowledgements(conn: Conn) -> list[PendingAcknowledgeme
 
 async def acknowledge_page(conn: Conn, page_id: int, acknowledged_at: datetime) -> None:
     await queries.acknowledge_page(conn, page_id=page_id, acknowledged_at=acknowledged_at)
+
+
+async def get_escalation_state(conn: Conn, root_page_id: int, step: int) -> EscalationState | None:
+    return await queries.get_escalation_state(conn, root_page_id=root_page_id, step=step)
+
+
+async def list_ringing_chain_pages(conn: Conn, root_page_id: int) -> list[PendingAcknowledgement]:
+    return await _all(queries.list_ringing_chain_pages(conn, root_page_id=root_page_id))
+
+
+async def stop_page_alert(conn: Conn, page_id: int) -> None:
+    await queries.stop_page_alert(conn, page_id=page_id)
 
 
 async def get_rotation(conn: Conn, name: str = GLOBAL_ROTATION_NAME) -> Rotation | None:

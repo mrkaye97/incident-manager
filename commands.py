@@ -7,6 +7,7 @@ from asyncpg import Connection
 import actions
 import db
 from actions import ActionError
+from escalation import page_and_escalate
 from internal.types import (
     Actor,
     CreateActionItemInput,
@@ -116,7 +117,7 @@ async def submit_page_member(
         raise ActionError("pick a member to page.")
 
     incident_raw = payload.field("incident_id")
-    page = await actions.page_member(
+    page = await page_and_escalate(
         conn,
         slack,
         pushover,

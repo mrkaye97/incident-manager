@@ -115,7 +115,17 @@ class PageRecord(BaseModel):
 
 class PendingAcknowledgement(BaseModel):
     id: int
+    root_page_id: int
     pushover_receipt: PushoverReceipt
+
+
+class EscalationState(BaseModel):
+    root_page_id: int
+    root_member_id: TeamMemberId
+    incident_id: IncidentId | None
+    incident_status: IncidentStatus | None
+    acknowledged: bool
+    step_done: bool
 
 
 class Rotation(BaseModel):
@@ -325,6 +335,21 @@ class PageMemberInput(BaseModel):
     incident_id: IncidentId | None = None
     reason: str | None = None
     actor: Actor
+    root_page_id: int | None = None
+    escalation_step: int | None = None
+
+
+class EscalatePageInput(BaseModel):
+    root_page_id: int
+
+
+class EscalationStepInput(BaseModel):
+    root_page_id: int
+    step: int
+
+
+class EscalationStepResult(BaseModel):
+    done: bool
 
 
 class ResolveIncidentInput(BaseModel):

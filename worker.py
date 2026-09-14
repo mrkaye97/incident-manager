@@ -1,23 +1,19 @@
 import logging
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
-from typing import Annotated, cast
 
-from asyncpg import Connection, Pool, Record, create_pool
-from asyncpg.pool import PoolConnectionProxy
+from asyncpg import create_pool
 from hatchet_sdk import (
     Context,
-    Depends,
     EmptyModel,
-    Hatchet,
 )
-from pydantic import BaseModel
 
 import actions
 import commands
 import db
 from actions import ActionError
 from alerts import handle_alert
+from escalation import escalate_page, escalation_step, page_and_escalate
+from hatchet_client import ConnectionDep, Lifespan, LifespanDep, hatchet
 from internal.types import (
     ActionItem,
     CallbackID,
@@ -50,44 +46,6 @@ from slack import (
 )
 
 logger = logging.getLogger("incident-bot")
-hatchet = Hatchet()
-
-
-class Lifespan:
-    def __init__(
-        self,
-        pool: Pool,
-        slack: SlackClient,
-        pushover: PushoverClient | None,
-        settings: Settings,
-    ) -> None:
-        self.pool = pool
-        self.slack = slack
-        self.pushover = pushover
-        self.settings = settings
-
-
-def lifespan_dep(
-    _i: BaseModel,
-    ctx: Context,
-) -> Lifespan:
-    return cast(Lifespan, ctx.lifespan)
-
-
-LifespanDep = Annotated[Lifespan, Depends(lifespan_dep)]
-
-
-@asynccontextmanager
-async def connection(
-    _i: BaseModel,
-    ctx: Context,
-    lifespan: LifespanDep,
-) -> "AsyncGenerator[PoolConnectionProxy[Record], None]":
-    async with lifespan.pool.acquire() as conn, conn.transaction():
-        yield conn
-
-
-ConnectionDep = Annotated[Connection, Depends(connection)]
 
 
 @hatchet.task(on_events=["slack:slash"], input_validator=SlackSlashCommand)
@@ -233,7 +191,7 @@ async def page_member(
     conn: ConnectionDep,
     lifespan: LifespanDep,
 ) -> Page:
-    return await actions.page_member(conn, lifespan.slack, lifespan.pushover, input)
+    return await page_and_escalate(conn, lifespan.slack, lifespan.pushover, input)
 
 
 @hatchet.task(input_validator=ResolveIncidentInput, retries=0)
@@ -323,6 +281,8 @@ def main() -> None:
             update_incident_description,
             create_action_item,
             update_action_item,
+            escalate_page,
+            escalation_step,
         ],
         lifespan=lifespan,
     )

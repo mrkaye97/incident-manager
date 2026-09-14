@@ -122,7 +122,9 @@ async def page_member(
     if input.incident_id is not None:
         await _require_incident(conn, input.incident_id)
 
-    page = await db.create_page(conn, member.id, input.incident_id)
+    page = await db.create_page(
+        conn, member.id, input.incident_id, input.root_page_id, input.escalation_step
+    )
 
     await push_page(conn, pushover, page.id, input.actor.name, input.reason)
 

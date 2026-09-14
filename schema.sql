@@ -60,6 +60,10 @@ CREATE TABLE IF NOT EXISTS page (
     pushover_receipt TEXT UNIQUE,
     pushover_expires_at TIMESTAMPTZ,
     acknowledged_at TIMESTAMPTZ,
+    -- escalation pages point at the page that started the chain
+    root_page_id BIGINT REFERENCES page(id),
+    escalation_step INTEGER,
+    UNIQUE (root_page_id, escalation_step),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

@@ -92,5 +92,8 @@ class PushoverClient:
             expired=bool(body["expired"]),
         )
 
+    async def cancel_receipt(self, receipt: PushoverReceipt) -> None:
+        await self._request("POST", f"/receipts/{receipt}/cancel.json")
+
     async def cancel_incident_pages(self, incident_id: IncidentId) -> None:
         await self._request("POST", f"/receipts/cancel_by_tag/{incident_tag(incident_id)}.json")

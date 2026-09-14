@@ -216,7 +216,7 @@ async def handle_critical_alert(
     await handle_alert(conn, lifespan.slack, lifespan.pushover, alert)
 
 
-@hatchet.task(input_validator=CreateIncidentInput)
+@hatchet.task(input_validator=CreateIncidentInput, retries=0)
 async def create_incident(
     input: CreateIncidentInput,
     _ctx: Context,
@@ -226,7 +226,7 @@ async def create_incident(
     return await actions.create_incident(conn, lifespan.slack, input)
 
 
-@hatchet.task(input_validator=PageMemberInput)
+@hatchet.task(input_validator=PageMemberInput, retries=0)
 async def page_member(
     input: PageMemberInput,
     _ctx: Context,
@@ -236,7 +236,7 @@ async def page_member(
     return await actions.page_member(conn, lifespan.slack, lifespan.pushover, input)
 
 
-@hatchet.task(input_validator=ResolveIncidentInput)
+@hatchet.task(input_validator=ResolveIncidentInput, retries=0)
 async def resolve_incident(
     input: ResolveIncidentInput,
     _ctx: Context,
@@ -246,7 +246,7 @@ async def resolve_incident(
     return await actions.resolve_incident(conn, lifespan.slack, lifespan.pushover, input)
 
 
-@hatchet.task(input_validator=UpdateIncidentDescriptionInput)
+@hatchet.task(input_validator=UpdateIncidentDescriptionInput, retries=0)
 async def update_incident_description(
     input: UpdateIncidentDescriptionInput,
     _ctx: Context,
@@ -256,7 +256,7 @@ async def update_incident_description(
     return await actions.update_incident_description(conn, lifespan.slack, input)
 
 
-@hatchet.task(input_validator=CreateActionItemInput)
+@hatchet.task(input_validator=CreateActionItemInput, retries=0)
 async def create_action_item(
     input: CreateActionItemInput,
     _ctx: Context,
@@ -266,7 +266,7 @@ async def create_action_item(
     return await actions.create_action_item(conn, lifespan.slack, input)
 
 
-@hatchet.task(input_validator=UpdateActionItemInput)
+@hatchet.task(input_validator=UpdateActionItemInput, retries=0)
 async def update_action_item(
     input: UpdateActionItemInput,
     _ctx: Context,

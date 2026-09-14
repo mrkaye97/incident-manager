@@ -50,7 +50,7 @@ from settings import Settings
 
 settings = Settings()  # ty: ignore[missing-argument]
 
-TASK_TIMEOUT_SECONDS = 30
+TASK_TIMEOUT_SECONDS = 15
 
 TInput = TypeVar("TInput", bound=BaseModel)
 TOutput = TypeVar("TOutput", bound=BaseModel)
@@ -193,15 +193,20 @@ async def _run(task: Standalone[TInput, TOutput], input: TInput) -> TOutput:
             return await task.aio_run(input)
     except TimeoutError as e:
         raise HTTPException(
-            status.HTTP_504_GATEWAY_TIMEOUT, f"{task.name} didn't finish — is the worker running?"
+            status.HTTP_504_GATEWAY_TIMEOUT,
+            f"{task.name} didn't finish within {TASK_TIMEOUT_SECONDS}s — is the worker running?",
         ) from e
     except FailedTaskRunExceptionGroup as e:
-        for error in e.exceptions:
-            if error.exc_type == NotFoundError.__name__:
-                raise HTTPException(status.HTTP_404_NOT_FOUND, error.exc) from e
-            if error.exc_type == ActionError.__name__:
-                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, error.exc) from e
-        raise
+        error = e.exceptions[0] if e.exceptions else None
+
+        if error is not None and error.exc_type == NotFoundError.__name__:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, error.exc) from e
+
+        if error is not None and error.exc_type == ActionError.__name__:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, error.exc) from e
+
+        detail = f"{task.name} failed: {error.exc_type}: {error.exc}" if error else str(e)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail) from e
 
 
 async def _require_members(conn: Conn, member_ids: list[TeamMemberId]) -> None:

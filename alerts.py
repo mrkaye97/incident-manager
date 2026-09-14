@@ -3,13 +3,13 @@ from __future__ import annotations
 import logging
 import re
 from enum import StrEnum
-from uuid import UUID
 
 from asyncpg import Connection
 from pydantic import BaseModel, field_validator
 
 import db
 from commands import mention, open_incident
+from ids import IncidentId
 from slack import SlackClient
 
 logger = logging.getLogger("incident-bot")
@@ -58,7 +58,7 @@ def _body(alert: HyperDXAlert) -> str:
     return f"\n> {alert.body}" if alert.body else ""
 
 
-async def _record(conn: Connection, alert: HyperDXAlert, incident_id: UUID | None) -> None:
+async def _record(conn: Connection, alert: HyperDXAlert, incident_id: IncidentId | None) -> None:
     await db.record_alert(conn, alert.title, alert.state, alert.body, alert.link, incident_id)
 
 

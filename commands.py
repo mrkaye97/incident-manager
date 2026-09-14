@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
 import re
-from datetime import UTC, date, datetime, time
+from datetime import UTC, datetime
+from uuid import UUID
 
 from asyncpg import Connection
 
 import db
+from ids import IncidentId, SlackChannelId, SlackUserId, TeamMemberId
 from slack import InteractivityPayload, SlackClient, Subcommand
+
+logger = logging.getLogger("incident-bot")
 
 _CHANNEL_NAME_MAX = 80
 
@@ -17,7 +22,7 @@ def _incident_channel_name(name: str) -> str:
     return f"{prefix}{slug}"[:_CHANNEL_NAME_MAX].rstrip("-")
 
 
-def mention(user_id: str) -> str:
+def mention(user_id: SlackUserId) -> str:
     return f"`@{user_id}`"
 
 
@@ -25,8 +30,6 @@ HELP_TEXT = (
     "*Incident bot commands*\n"
     "• `create` — open an incident\n"
     "• `page` — page a team member\n"
-    "• `oncall` — show who is currently on call\n"
-    "• `schedule` — configure a recurring on-call rotation\n"
     "• `update` — update the current incident's description (run in an incident channel)\n"
     "• `action` — add an action item to the current incident (run in an incident channel)\n"
     "• `complete` — mark action items complete (run in an incident channel)\n"
@@ -35,8 +38,8 @@ HELP_TEXT = (
 
 
 async def _require_member(
-    conn: Connection, slack: SlackClient, channel_id: str, slack_user_id: str
-) -> int | None:
+    conn: Connection, slack: SlackClient, channel_id: SlackChannelId, slack_user_id: SlackUserId
+) -> TeamMemberId | None:
     member_id = await db.member_id_by_slack_id(conn, slack_user_id)
 
     if member_id is None:
@@ -49,33 +52,20 @@ async def _require_member(
     return member_id
 
 
-async def respond_oncall(conn: Connection, slack: SlackClient, response_url: str) -> None:
-    oncall = await db.current_oncall(conn)
-
-    if not oncall:
-        await slack.respond(response_url, "Nobody is currently on call.")
-        return
-
-    lines = "\n".join(
-        f"• P{r.escalation_priority}: " + (mention(r.slack_user_id) if r.slack_user_id else r.name)
-        for r in oncall
-    )
-
-    await slack.respond(response_url, f"*Currently on call*\n{lines}")
-
-
 async def open_incident(
     conn: Connection,
     slack: SlackClient,
     *,
     name: str,
-    lead_member_id: int,
+    lead_member_id: TeamMemberId,
     description: str | None,
-    invite_slack_ids: set[str],
-) -> tuple[int, str]:
+    invite_slack_ids: set[SlackUserId],
+) -> tuple[IncidentId, SlackChannelId]:
     channel_id = await slack.create_channel(_incident_channel_name(name)[:80])
     incident_id = await db.create_incident(conn, name, channel_id, lead_member_id, description)
+
     await slack.invite_users(channel_id, invite_slack_ids)
+
     return incident_id, channel_id
 
 
@@ -91,7 +81,7 @@ async def create_incident(
         )
         return
 
-    lead = payload.field("lead")
+    lead = payload.user_field("lead")
     if not lead:
         oncall = await db.current_oncall(conn)
         primary = next((o for o in oncall if o.slack_user_id), None)
@@ -122,20 +112,20 @@ async def create_incident(
 
     await slack.post_message(
         channel_id,
-        f":rotating_light: Incident #{incident_id} *{name}* opened by "
+        f":rotating_light: Incident *{name}* (id `{incident_id}`) opened by "
         f"{mention(payload.user.id)} — lead {mention(lead)}.",
     )
 
     if origin_channel_id != channel_id:
         await slack.post_message(
             origin_channel_id,
-            f":rotating_light: Incident #{incident_id} *{name}* opened — join <#{channel_id}>.",
+            f":rotating_light: Incident *{name}* opened — join <#{channel_id}>.",
         )
 
 
 async def page_member(conn: Connection, slack: SlackClient, payload: InteractivityPayload) -> None:
     channel_id = payload.metadata.channel_id
-    target = payload.field("target")
+    target = payload.user_field("target")
 
     if not target:
         await slack.post_message(
@@ -145,7 +135,7 @@ async def page_member(conn: Connection, slack: SlackClient, payload: Interactivi
         return
 
     incident_raw = payload.field("incident_id")
-    incident_id = int(incident_raw) if incident_raw and incident_raw.strip().isdigit() else None
+    incident_id = IncidentId(UUID(incident_raw)) if incident_raw else None
     member_id = await _require_member(conn, slack, channel_id, target)
 
     if member_id is None:
@@ -153,14 +143,41 @@ async def page_member(conn: Connection, slack: SlackClient, payload: Interactivi
 
     page = await db.create_page(conn, member_id, incident_id)
 
-    note = f" for incident <#{page.slack_channel_id}>" if page.slack_channel_id else ""
-    reason = payload.field("reason")
-    detail = f" — {reason}" if reason else ""
-
     await slack.post_message(
         channel_id,
-        f":pager: {mention(target)} you've been paged by {mention(payload.user.id)}{note}{detail}",
+        page_text(target, mention(payload.user.id), page.slack_channel_id, payload.field("reason")),
     )
+
+
+def page_text(
+    target_slack_id: SlackUserId,
+    paged_by: str,
+    incident_channel_id: SlackChannelId | None,
+    reason: str | None,
+) -> str:
+    note = f" for incident <#{incident_channel_id}>" if incident_channel_id else ""
+    detail = f" — {reason}" if reason else ""
+    return f":pager: {mention(target_slack_id)} you've been paged by {paged_by}{note}{detail}"
+
+
+async def deliver_page(
+    conn: Connection, slack: SlackClient, page_id: int, reason: str | None, paged_by: str
+) -> None:
+    page = await db.get_page_delivery(conn, page_id)
+
+    if page is None:
+        raise ValueError(f"page {page_id} not found")
+
+    if page.slack_user_id is None:
+        logger.warning("page %s: member %s has no slack user id", page_id, page.member_name)
+        return
+
+    text = page_text(page.slack_user_id, paged_by, page.slack_channel_id, reason)
+
+    if page.slack_channel_id:
+        await slack.invite_users(page.slack_channel_id, {page.slack_user_id})
+
+    await slack.post_message(page.slack_channel_id or page.slack_user_id, text)
 
 
 async def update_description(
@@ -215,7 +232,7 @@ async def create_action_item(
         )
         return
 
-    assignee = payload.field("assignee")
+    assignee = payload.user_field("assignee")
     assignee_id = None
 
     if assignee:
@@ -233,16 +250,29 @@ async def create_action_item(
 
 
 async def resolve_incident(
-    conn: Connection, slack: SlackClient, incident: db.Incident, actor_slack_id: str
+    conn: Connection, slack: SlackClient, incident: db.Incident, actor_slack_id: SlackUserId
 ) -> None:
     await db.resolve_incident(conn, incident.id)
+    await announce_resolution(conn, slack, incident.id, mention(actor_slack_id))
 
-    open_items = await db.list_open_action_items(conn, incident.id)
-    note = f" {len(open_items)} action item(s) still open." if open_items else ""
+
+async def announce_resolution(
+    conn: Connection, slack: SlackClient, incident_id: IncidentId, resolved_by: str
+) -> None:
+    incident = await db.get_incident(conn, incident_id)
+
+    if incident is None:
+        raise ValueError(f"incident {incident_id} not found")
+
+    note = (
+        f" {incident.open_action_items} action item(s) still open."
+        if incident.open_action_items
+        else ""
+    )
 
     await slack.post_message(
         incident.slack_channel_id,
-        f":checkered_flag: {mention(actor_slack_id)} resolved incident *{incident.name}*.{note}",
+        f":checkered_flag: {resolved_by} resolved incident *{incident.name}*.{note}",
     )
 
 
@@ -264,60 +294,6 @@ async def complete_action_items(
     await slack.post_message(
         channel_id,
         f":white_check_mark: {mention(payload.user.id)} completed {completed} action item(s).",
-    )
-
-
-async def configure_rotation(
-    conn: Connection, slack: SlackClient, payload: InteractivityPayload
-) -> None:
-    channel_id = payload.metadata.channel_id
-    members = payload.users("members")
-    start = payload.field("start")
-
-    if not start:
-        await slack.post_message(
-            channel_id,
-            f":warning: {mention(payload.user.id)} a rotation start date is required.",
-        )
-
-        return
-
-    anchor = datetime.combine(date.fromisoformat(start), time.min, tzinfo=UTC)
-
-    raw_period = payload.field("period_days") or ""
-
-    if not raw_period.strip().isdigit() or int(raw_period) < 1:
-        await slack.post_message(
-            channel_id,
-            f":warning: {mention(payload.user.id)} days per person must be a positive whole number.",
-        )
-        return
-
-    period_days = int(raw_period)
-
-    member_ids = [
-        member_id
-        for slack_user_id in members
-        if (member_id := await _require_member(conn, slack, channel_id, slack_user_id)) is not None
-    ]
-
-    if not member_ids:
-        await slack.post_message(
-            channel_id,
-            f":warning: {mention(payload.user.id)} a rotation needs at least one member.",
-        )
-        return
-
-    await db.upsert_rotation(conn, member_ids, period_days, anchor)
-
-    levels = min(db.ESCALATION_LEVELS, len(member_ids))
-    order = " → ".join(mention(u) for u in members)
-
-    await slack.post_message(
-        channel_id,
-        f":calendar: On-call rotation configured: {order}, rotating every "
-        f"{period_days} day(s) from {anchor.date()}. Each shift stacks {levels} level(s) "
-        f"(P1–P{levels}).",
     )
 
 

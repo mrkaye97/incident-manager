@@ -4,7 +4,6 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
-from uuid import UUID
 
 from asyncpg import Pool, create_pool
 from asyncpg.exceptions import (
@@ -17,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 
 import db
+from ids import IncidentId, SlackUserId, TeamMemberId
 from schedule import Shift, build_schedule
 from settings import Settings
 from worker import (
@@ -52,7 +52,7 @@ def _not_found(what: str) -> HTTPException:
     return HTTPException(status.HTTP_404_NOT_FOUND, f"{what} not found")
 
 
-async def _require_members(conn: db.Conn, member_ids: list[int]) -> None:
+async def _require_members(conn: db.Conn, member_ids: list[TeamMemberId]) -> None:
     if missing := await db.missing_member_ids(conn, member_ids):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, f"unknown team member(s): {sorted(missing)}"
@@ -93,7 +93,7 @@ async def list_incidents(
 
 
 @router.get("/incidents/{incident_id}")
-async def get_incident(pool: PoolDep, incident_id: UUID) -> IncidentDetail:
+async def get_incident(pool: PoolDep, incident_id: IncidentId) -> IncidentDetail:
     async with pool.acquire() as conn:
         incident = await db.get_incident(conn, incident_id)
 
@@ -110,7 +110,7 @@ async def get_incident(pool: PoolDep, incident_id: UUID) -> IncidentDetail:
 
 @router.patch("/incidents/{incident_id}")
 async def update_incident(
-    pool: PoolDep, incident_id: UUID, body: IncidentUpdate
+    pool: PoolDep, incident_id: IncidentId, body: IncidentUpdate
 ) -> db.IncidentSummary:
     async with pool.acquire() as conn:
         await db.update_incident_description(conn, incident_id, body.description)
@@ -123,7 +123,7 @@ async def update_incident(
 
 
 @router.post("/incidents/{incident_id}/resolve")
-async def resolve_incident(pool: PoolDep, incident_id: UUID) -> db.IncidentSummary:
+async def resolve_incident(pool: PoolDep, incident_id: IncidentId) -> db.IncidentSummary:
     async with pool.acquire() as conn:
         incident = await db.resolve_incident(conn, incident_id)
 
@@ -142,13 +142,13 @@ async def resolve_incident(pool: PoolDep, incident_id: UUID) -> db.IncidentSumma
 
 class ActionItemCreate(BaseModel):
     description: str = Field(min_length=1)
-    assignee_id: int | None = None
+    assignee_id: TeamMemberId | None = None
 
 
 class ActionItemUpdate(BaseModel):
     description: str | None = Field(default=None, min_length=1)
     is_completed: bool | None = None
-    assignee_id: int | None = None
+    assignee_id: TeamMemberId | None = None
 
 
 @router.get("/action-items")
@@ -159,7 +159,7 @@ async def list_action_items(pool: PoolDep, open_only: bool = True) -> list[db.Ac
 
 @router.post("/incidents/{incident_id}/action-items", status_code=status.HTTP_201_CREATED)
 async def create_action_item(
-    pool: PoolDep, incident_id: UUID, body: ActionItemCreate
+    pool: PoolDep, incident_id: IncidentId, body: ActionItemCreate
 ) -> db.ActionItem:
     async with pool.acquire() as conn, conn.transaction():
         if await db.get_incident(conn, incident_id) is None:
@@ -213,7 +213,7 @@ async def update_action_item(
 
 class MemberInput(BaseModel):
     name: str = Field(min_length=1)
-    slack_user_id: str | None = None
+    slack_user_id: SlackUserId | None = None
     slack_handle: str | None = None
 
 
@@ -237,7 +237,7 @@ async def create_member(pool: PoolDep, body: MemberInput) -> db.Member:
 
 
 @router.put("/members/{member_id}")
-async def update_member(pool: PoolDep, member_id: int, body: MemberInput) -> db.Member:
+async def update_member(pool: PoolDep, member_id: TeamMemberId, body: MemberInput) -> db.Member:
     try:
         async with pool.acquire() as conn:
             member = await db.update_member(
@@ -259,13 +259,13 @@ async def sync_members() -> TriggeredRun:
 
 
 class RotationInput(BaseModel):
-    member_ids: list[int] = Field(min_length=1)
+    member_ids: list[TeamMemberId] = Field(min_length=1)
     period_days: int = Field(ge=1)
     anchor: datetime
 
 
 class OverrideInput(BaseModel):
-    team_member_id: int
+    team_member_id: TeamMemberId
     start: datetime
     end: datetime
     escalation_priority: int = Field(ge=1)
@@ -362,8 +362,8 @@ async def delete_override(pool: PoolDep, override_id: int) -> None:
 
 
 class PageInput(BaseModel):
-    team_member_id: int
-    incident_id: UUID | None = None
+    team_member_id: TeamMemberId
+    incident_id: IncidentId | None = None
     reason: str | None = None
 
 
@@ -375,7 +375,7 @@ class PageResult(BaseModel):
 @router.get("/pages")
 async def list_pages(
     pool: PoolDep,
-    incident_id: UUID | None = None,
+    incident_id: IncidentId | None = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> list[db.PageRecord]:
     async with pool.acquire() as conn:

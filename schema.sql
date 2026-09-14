@@ -80,3 +80,28 @@ CREATE TABLE IF NOT EXISTS alert (
 );
 
 CREATE INDEX IF NOT EXISTS alert_title_idx ON alert (title);
+
+CREATE OR REPLACE VIEW incident_summary AS
+SELECT
+    i.id, i.name, i.status, i.slack_channel_id, i.description, i.start_time, i.end_time,
+    i.lead AS lead_id,
+    tm.name AS lead_name,
+    ai.open_action_items,
+    ai.total_action_items
+FROM incident i
+JOIN team_member tm ON tm.id = i.lead
+CROSS JOIN LATERAL (
+    SELECT
+        count(*) FILTER (WHERE NOT is_completed) AS open_action_items,
+        count(*) AS total_action_items
+    FROM incident_action_item
+    WHERE incident_id = i.id
+) ai;
+
+CREATE OR REPLACE VIEW action_item_detail AS
+SELECT
+    ai.id, ai.incident_id, i.name AS incident_name, ai.description, ai.is_completed,
+    ai.assignee_team_member_id AS assignee_id, tm.name AS assignee_name, ai.created_at
+FROM incident_action_item ai
+JOIN incident i ON i.id = ai.incident_id
+LEFT JOIN team_member tm ON tm.id = ai.assignee_team_member_id;

@@ -279,6 +279,7 @@ async def configure_rotation(
             channel_id,
             f":warning: {mention(payload.user.id)} a rotation start date is required.",
         )
+
         return
 
     anchor = datetime.combine(date.fromisoformat(start), time.min, tzinfo=UTC)

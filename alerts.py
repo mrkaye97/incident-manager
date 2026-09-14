@@ -62,10 +62,6 @@ async def _record(conn: Connection, alert: HyperDXAlert, incident_id: int | None
 
 
 async def handle_alert(conn: Connection, slack: SlackClient, alert: HyperDXAlert) -> None:
-    """Ingest a HyperDX alert: dedup against an open incident sharing its title (our dedup
-    key — HyperDX has no fingerprint), otherwise open a fresh incident and page the on-call.
-    Title-keyed concurrency (see the task decorator) serializes a burst so duplicates coalesce."""
-
     existing = await db.find_open_incident_by_alert_title(conn, alert.title)
 
     if alert.state != AlertState.ALERT:
@@ -80,6 +76,7 @@ async def handle_alert(conn: Connection, slack: SlackClient, alert: HyperDXAlert
             )
         else:
             logger.info("ignoring non-firing hyperdx alert %r (state=%s)", alert.title, alert.state)
+
         return
 
     if existing is not None:

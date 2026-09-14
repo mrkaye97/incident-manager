@@ -14,30 +14,34 @@ from hatchet_sdk import (
 from pydantic import BaseModel
 
 import db
-from alerts import HyperDXAlert, handle_alert
+from alerts import handle_alert
 from commands import (
     HELP_TEXT,
+    announce_resolution,
     complete_action_items,
-    configure_rotation,
     create_action_item,
     create_incident,
+    deliver_page,
     page_member,
     parse_subcommand,
     resolve_incident,
-    respond_oncall,
     update_description,
+)
+from internal.types import (
+    AnnounceResolutionInput,
+    CallbackID,
+    DeliverPageInput,
+    HyperDXAlert,
+    InteractivityPayload,
+    SlackSlashCommand,
+    Subcommand,
+    ViewMetadata,
 )
 from members import backfill
 from settings import Settings
 from slack import (
-    CallbackID,
-    InteractivityPayload,
     SlackClient,
-    SlackSlashCommand,
-    Subcommand,
-    ViewMetadata,
     complete_action_items_modal,
-    configure_rotation_modal,
     create_action_item_modal,
     create_incident_modal,
     page_member_modal,
@@ -87,8 +91,6 @@ async def handle_incident_slash_command(
 ) -> None:
     metadata = ViewMetadata(channel_id=event.channel_id, user_id=event.user_id)
     match parse_subcommand(event.text):
-        case Subcommand.ONCALL:
-            await respond_oncall(conn, lifespan.slack, event.response_url)
         case Subcommand.CREATE:
             await lifespan.slack.views_open(event.trigger_id, create_incident_modal(metadata))
         case Subcommand.PAGE:
@@ -96,8 +98,6 @@ async def handle_incident_slash_command(
             await lifespan.slack.views_open(
                 event.trigger_id, page_member_modal(metadata, incidents)
             )
-        case Subcommand.SCHEDULE:
-            await lifespan.slack.views_open(event.trigger_id, configure_rotation_modal(metadata))
         case Subcommand.UPDATE:
             incident = await db.find_open_incident_by_channel_id(conn, event.channel_id)
             if incident is None:
@@ -166,8 +166,6 @@ async def handle_interactivity(
             await create_incident(conn, lifespan.slack, payload)
         case CallbackID.PAGE_MEMBER:
             await page_member(conn, lifespan.slack, payload)
-        case CallbackID.CONFIGURE_ROTATION:
-            await configure_rotation(conn, lifespan.slack, payload)
         case CallbackID.UPDATE_DESCRIPTION:
             await update_description(conn, lifespan.slack, payload)
         case CallbackID.CREATE_ACTION_ITEM:
@@ -191,6 +189,29 @@ async def handle_critical_alert(
     lifespan: LifespanDep,
 ) -> None:
     await handle_alert(conn, lifespan.slack, alert)
+
+
+WEB_UI_ACTOR = "someone via the web UI"
+
+
+@hatchet.task(input_validator=DeliverPageInput)
+async def deliver_page_notification(
+    input: DeliverPageInput,
+    _ctx: Context,
+    conn: ConnectionDep,
+    lifespan: LifespanDep,
+) -> None:
+    await deliver_page(conn, lifespan.slack, input.page_id, input.reason, WEB_UI_ACTOR)
+
+
+@hatchet.task(input_validator=AnnounceResolutionInput)
+async def announce_incident_resolution(
+    input: AnnounceResolutionInput,
+    _ctx: Context,
+    conn: ConnectionDep,
+    lifespan: LifespanDep,
+) -> None:
+    await announce_resolution(conn, lifespan.slack, input.incident_id, WEB_UI_ACTOR)
 
 
 @hatchet.task(on_crons=["0 6 * * *"])
@@ -221,6 +242,8 @@ def main() -> None:
             handle_interactivity,
             handle_critical_alert,
             backfill_members,
+            deliver_page_notification,
+            announce_incident_resolution,
         ],
         lifespan=lifespan,
     )

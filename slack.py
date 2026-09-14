@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from enum import StrEnum
 from typing import cast
 
-from pydantic import BaseModel, Field
 from slack_sdk.errors import SlackApiError
 from slack_sdk.http_retry.builtin_async_handlers import (
     AsyncConnectionErrorRetryHandler,
@@ -13,146 +11,26 @@ from slack_sdk.http_retry.builtin_async_handlers import (
 from slack_sdk.models.blocks import (
     Block,
     CheckboxesElement,
-    DatePickerElement,
     InputBlock,
     InputInteractiveElement,
     Option,
     PlainTextInputElement,
     StaticSelectElement,
-    UserMultiSelectElement,
     UserSelectElement,
 )
 from slack_sdk.models.views import View
 from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.webhook.async_client import AsyncWebhookClient
 
-from db import ActionItemOption, IncidentOption
-
-
-class Subcommand(StrEnum):
-    CREATE = "create"
-    PAGE = "page"
-    ONCALL = "oncall"
-    SCHEDULE = "schedule"
-    UPDATE = "update"
-    ACTION = "action"
-    RESOLVE = "resolve"
-    COMPLETE = "complete"
-
-
-class CallbackID(StrEnum):
-    CREATE_INCIDENT = "create_incident"
-    PAGE_MEMBER = "page_member"
-    CONFIGURE_ROTATION = "configure_rotation"
-    UPDATE_DESCRIPTION = "update_description"
-    CREATE_ACTION_ITEM = "create_action_item"
-    COMPLETE_ACTION_ITEMS = "complete_action_items"
-
-
-class SlackProfile(BaseModel):
-    real_name: str | None = None
-    display_name: str | None = None
-
-
-class SlackMember(BaseModel):
-    id: str
-    name: str
-    team_id: str | None = None
-    deleted: bool = False
-    is_bot: bool = False
-    is_app_user: bool = False
-    is_stranger: bool = False
-    is_restricted: bool = False
-    is_ultra_restricted: bool = False
-    real_name: str | None = None
-    profile: SlackProfile = Field(default_factory=SlackProfile)
-
-    @property
-    def display_name(self) -> str:
-        return self.profile.real_name or self.real_name or self.profile.display_name or self.name
-
-
-class ViewMetadata(BaseModel):
-    channel_id: str
-    user_id: str
-    incident_id: int | None = None
-
-
-class SlackOption(BaseModel):
-    value: str
-
-
-class SlackStateElement(BaseModel):
-    value: str | None = None
-    selected_user: str | None = None
-    selected_date: str | None = None
-    selected_option: SlackOption | None = None
-    selected_users: list[str] = Field(default_factory=list)
-    selected_options: list[SlackOption] = Field(default_factory=list)
-
-
-class SlackViewState(BaseModel):
-    values: dict[str, dict[str, SlackStateElement]]
-
-
-class SlackView(BaseModel):
-    callback_id: str
-    private_metadata: str = ""
-    state: SlackViewState
-
-
-class SlackActor(BaseModel):
-    id: str
-    username: str | None = None
-    name: str | None = None
-
-
-class InteractivityPayload(BaseModel):
-    type: str
-    user: SlackActor
-    view: SlackView
-
-    def field(self, block: str, action: str = "value") -> str | None:
-        el = self.view.state.values.get(block, {}).get(action)
-        if el is None:
-            return None
-        if el.value is not None:
-            return el.value
-        if el.selected_user is not None:
-            return el.selected_user
-        if el.selected_date is not None:
-            return el.selected_date
-        if el.selected_option is not None:
-            return el.selected_option.value
-        return None
-
-    def users(self, block: str, action: str = "value") -> list[str]:
-        el = self.view.state.values.get(block, {}).get(action)
-        return el.selected_users if el is not None else []
-
-    def options(self, block: str, action: str = "value") -> list[str]:
-        el = self.view.state.values.get(block, {}).get(action)
-        return [o.value for o in el.selected_options] if el is not None else []
-
-    @property
-    def metadata(self) -> ViewMetadata:
-        return ViewMetadata.model_validate_json(self.view.private_metadata)
-
-
-class SlackSlashCommand(BaseModel):
-    text: str | None
-    token: str
-    command: str
-    team_id: str
-    user_id: str
-    user_name: str
-    api_app_id: str
-    channel_id: str
-    trigger_id: str
-    team_domain: str
-    channel_name: str
-    response_url: str
-    is_enterprise_install: bool
+from internal.types import (
+    ActionItemOption,
+    CallbackID,
+    IncidentOption,
+    SlackChannelId,
+    SlackMember,
+    SlackUserId,
+    ViewMetadata,
+)
 
 
 class SlackClient:
@@ -174,7 +52,7 @@ class SlackClient:
             members.extend(SlackMember.model_validate(m) for m in page["members"])
         return members
 
-    async def usergroup_member_ids(self, handle: str) -> set[str]:
+    async def usergroup_member_ids(self, handle: str) -> set[SlackUserId]:
         groups = (await self._web.usergroups_list())["usergroups"]
         match = next((g for g in groups if g["handle"] == handle), None)
         if match is None:
@@ -185,12 +63,12 @@ class SlackClient:
     async def views_open(self, trigger_id: str, view: View) -> None:
         await self._web.views_open(trigger_id=trigger_id, view=view)
 
-    async def create_channel(self, name: str) -> str:
+    async def create_channel(self, name: str) -> SlackChannelId:
         response = await self._web.conversations_create(name=name)
 
-        return cast(str, response["channel"]["id"])
+        return SlackChannelId(cast(str, response["channel"]["id"]))
 
-    async def invite_users(self, channel: str, user_ids: Iterable[str]) -> None:
+    async def invite_users(self, channel: SlackChannelId, user_ids: Iterable[SlackUserId]) -> None:
         if not user_ids:
             return
 
@@ -200,7 +78,8 @@ class SlackClient:
             if e.response.get("error") not in ("already_in_channel", "cant_invite_self"):
                 raise
 
-    async def post_message(self, channel: str, text: str) -> None:
+    async def post_message(self, channel: SlackChannelId | SlackUserId, text: str) -> None:
+        # posting to a user id sends a DM from the bot
         await self._web.chat_postMessage(channel=channel, text=text)
 
     async def respond(self, response_url: str, text: str) -> None:
@@ -221,14 +100,6 @@ def _incident_select(incidents: list[IncidentOption]) -> StaticSelectElement:
         placeholder="Select an incident",
         options=[Option(text=incident.name, value=str(incident.id)) for incident in incidents],
     )
-
-
-def _user_multi_select() -> UserMultiSelectElement:
-    return UserMultiSelectElement(action_id="value")
-
-
-def _datepicker() -> DatePickerElement:
-    return DatePickerElement(action_id="value")
 
 
 def _action_item_checkboxes(items: list[ActionItemOption]) -> CheckboxesElement:
@@ -308,22 +179,5 @@ def complete_action_items_modal(metadata: ViewMetadata, items: list[ActionItemOp
         CallbackID.COMPLETE_ACTION_ITEMS,
         "Complete action items",
         [_input("items", "Mark as complete", _action_item_checkboxes(items))],
-        metadata,
-    )
-
-
-def configure_rotation_modal(metadata: ViewMetadata) -> View:
-    return _modal(
-        CallbackID.CONFIGURE_ROTATION,
-        "Configure rotation",
-        [
-            _input("members", "Members (in rotation order)", _user_multi_select()),
-            _input(
-                "period_days",
-                "Days per person",
-                PlainTextInputElement(action_id="value", placeholder="e.g. 7"),
-            ),
-            _input("start", "First handoff date", _datepicker()),
-        ],
         metadata,
     )

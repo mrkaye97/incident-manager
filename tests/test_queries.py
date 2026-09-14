@@ -16,6 +16,7 @@ from aiosql.query_loader import QueryLoader
 from aiosql.types import QueryDatum
 
 import db
+from internal.types import IncidentStatus
 
 SCHEMA = Path(__file__).parent.parent / "schema.sql"
 ADMIN_URL = os.environ.get(
@@ -33,7 +34,7 @@ PG_TYPES: dict[str, object] = {
     "uuid": UUID,
     "timestamptz": datetime,
     "int8[]": list[int],
-    "incident_status": db.IncidentStatus,
+    "incident_status": IncidentStatus,
 }
 
 # aiosql's AsyncPGAdapter doesn't quite match its own adapter protocol
@@ -70,10 +71,19 @@ def conn() -> Iterator[tuple[asyncio.AbstractEventLoop, asyncpg.Connection]]:
         loop.close()
 
 
-def _non_null(annotation: object) -> object:
+def _base_type(annotation: object) -> object:
+    """Strip `| None` and unwrap NewTypes (e.g. `IncidentId | None` -> `UUID`), including in lists."""
     if isinstance(annotation, types.UnionType) or typing.get_origin(annotation) is typing.Union:
         args = [a for a in typing.get_args(annotation) if a is not type(None)]
-        return args[0] if len(args) == 1 else annotation
+        return _base_type(args[0]) if len(args) == 1 else annotation
+
+    if isinstance(annotation, typing.NewType):
+        return _base_type(annotation.__supertype__)
+
+    if typing.get_origin(annotation) is list:
+        (item,) = typing.get_args(annotation)
+        return list[_base_type(item)]  # ty: ignore[invalid-type-form]
+
     return annotation
 
 
@@ -103,7 +113,7 @@ def test_query(
         expected = PG_TYPES.get(pg_type.name)
         assert expected is not None, f"{query.query_name}.{name}: unmapped type {pg_type.name}"
 
-        actual = _non_null(fields[name].annotation)
+        actual = _base_type(fields[name].annotation)
         assert actual == expected, (
             f"{query.query_name}.{name}: postgres {pg_type.name} returns {expected}, "
             f"but {query.record_class.__name__}.{name} is {actual}"

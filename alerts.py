@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from enum import StrEnum
+from uuid import UUID
 
 from asyncpg import Connection
 from pydantic import BaseModel, field_validator
@@ -57,7 +58,7 @@ def _body(alert: HyperDXAlert) -> str:
     return f"\n> {alert.body}" if alert.body else ""
 
 
-async def _record(conn: Connection, alert: HyperDXAlert, incident_id: int | None) -> None:
+async def _record(conn: Connection, alert: HyperDXAlert, incident_id: UUID | None) -> None:
     await db.record_alert(conn, alert.title, alert.state, alert.body, alert.link, incident_id)
 
 
@@ -123,6 +124,6 @@ async def handle_alert(conn: Connection, slack: SlackClient, alert: HyperDXAlert
 
     await slack.post_message(
         channel_id,
-        f":rotating_light: Incident #{incident_id} *{alert.title}* opened from a HyperDX alert. "
+        f":rotating_light: Incident *{alert.title}* opened from a HyperDX alert. "
         f"Paged {mention(primary.slack_user_id)} (on-call).{_link(alert)}{_body(alert)}",
     )

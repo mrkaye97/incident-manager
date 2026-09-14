@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS on_call_override (
 CREATE TYPE incident_status AS ENUM ('OPEN', 'RESOLVED');
 
 CREATE TABLE IF NOT EXISTS incident (
-    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
     name TEXT NOT NULL,
     slack_channel_id TEXT NOT NULL,
     lead BIGINT NOT NULL REFERENCES team_member(id),
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS incident (
 
 CREATE TABLE IF NOT EXISTS page (
     id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    incident_id BIGINT REFERENCES incident(id),
+    incident_id UUID REFERENCES incident(id),
     team_member_id BIGINT NOT NULL REFERENCES team_member(id),
     paged_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS page (
 
 CREATE TABLE IF NOT EXISTS incident_action_item (
     id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    incident_id BIGINT NOT NULL REFERENCES incident(id),
+    incident_id UUID NOT NULL REFERENCES incident(id),
     description TEXT NOT NULL,
     is_completed BOOLEAN NOT NULL DEFAULT FALSE,
     assignee_team_member_id BIGINT REFERENCES team_member(id),
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS alert (
     state TEXT,
     body TEXT,
     source_url TEXT,
-    incident_id BIGINT REFERENCES incident(id),
+    incident_id UUID REFERENCES incident(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

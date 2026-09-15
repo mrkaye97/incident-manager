@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { addDays, format, startOfDay } from "date-fns"
+import { addDays, format, formatDistanceStrict, startOfDay } from "date-fns"
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { LoadingState } from "@/components/ui/spinner"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   membersQuery,
   overridesQuery,
@@ -45,6 +46,7 @@ import {
   type Member,
   type OnCallLevel,
   type Rotation,
+  type Shift,
 } from "@/lib/api"
 import { dateTime, levelLabel } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -119,10 +121,7 @@ function ScheduleCard({
   const now = Date.now()
 
   const lanes = useMemo(
-    () =>
-      LEVELS.map((level) => [level, shifts.filter((s) => s.level === level)] as const).filter(
-        ([, laneShifts]) => laneShifts.length > 0,
-      ),
+    () => LEVELS.map((level) => [level, shifts.filter((s) => s.level === level)] as const),
     [shifts],
   )
 
@@ -140,7 +139,7 @@ function ScheduleCard({
       <CardContent className="overflow-x-auto">
         {isLoading ? (
           <LoadingState />
-        ) : lanes.length === 0 ? (
+        ) : shifts.length === 0 ? (
           <p className="text-sm text-muted-foreground">No rotation configured.</p>
         ) : (
           <div className="grid min-w-[720px] grid-cols-[6rem_1fr] gap-y-2">
@@ -156,24 +155,37 @@ function ScheduleCard({
               <div key={level} className="contents">
                 <div className="self-center text-sm font-medium">{levelLabel(level)}</div>
                 <div className="relative h-10 rounded-md bg-muted">
+                  {laneShifts.length === 0 && (
+                    <div className="flex h-full items-center px-2 text-xs text-muted-foreground">
+                      No {levelLabel(level).toLowerCase()} on call
+                    </div>
+                  )}
                   {laneShifts.map((shift) => {
                     const left = pct(shift.start)
                     const width = pct(shift.end) - left
-                    const name = membersById.get(shift.team_member_id)?.name ?? "?"
+                    const name = membersById.get(shift.team_member_id)?.name ?? "Unknown"
                     return (
-                      <div
-                        key={`${shift.start}-${shift.team_member_id}-${shift.override_id}`}
-                        title={`${name}: ${dateTime(shift.start)} → ${dateTime(shift.end)}${shift.override_id ? " (override)" : ""}`}
-                        className={cn(
-                          "absolute inset-y-0.5 flex items-center overflow-hidden rounded border px-1.5 text-xs whitespace-nowrap",
-                          memberColor(shift.team_member_id),
-                          shift.override_id &&
-                            "border-2 border-dashed bg-[repeating-linear-gradient(45deg,transparent,transparent_4px,rgb(0_0_0/0.05)_4px,rgb(0_0_0/0.05)_8px)]",
-                        )}
-                        style={{ left: `${left}%`, width: `${width}%` }}
-                      >
-                        {name}
-                      </div>
+                      <Tooltip key={`${shift.start}-${shift.team_member_id}-${shift.override_id}`}>
+                        <TooltipTrigger asChild>
+                          <div
+                            className={cn(
+                              "absolute inset-y-0.5 flex cursor-default items-center overflow-hidden rounded border px-1.5 text-xs whitespace-nowrap transition-shadow hover:z-10 hover:shadow-md",
+                              memberColor(shift.team_member_id),
+                              shift.override_id &&
+                                "border-2 border-dashed bg-[repeating-linear-gradient(45deg,transparent,transparent_4px,rgb(0_0_0/0.05)_4px,rgb(0_0_0/0.05)_8px)]",
+                            )}
+                            style={{
+                              left: `calc(${left}% + 1px)`,
+                              width: `max(calc(${width}% - 2px), 2px)`,
+                            }}
+                          >
+                            {name}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="grid gap-1 text-left">
+                          <ShiftDetails shift={shift} name={name} now={now} />
+                        </TooltipContent>
+                      </Tooltip>
                     )
                   })}
                   {now >= start && now < start + span && (
@@ -189,6 +201,27 @@ function ScheduleCard({
         )}
       </CardContent>
     </Card>
+  )
+}
+
+function ShiftDetails({ shift, name, now }: { shift: Shift; name: string; now: number }) {
+  const onCallNow = new Date(shift.start).getTime() <= now && now < new Date(shift.end).getTime()
+
+  return (
+    <>
+      <div className="flex items-center gap-2 font-medium">
+        {name}
+        {onCallNow && <span className="rounded bg-destructive px-1 text-[10px]">On call now</span>}
+      </div>
+      <div className="opacity-80">
+        {levelLabel(shift.level)} · {shift.override_id ? "Override" : "Rotation"}
+      </div>
+      <div>
+        {format(new Date(shift.start), "EEE MMM d, h:mm a")} →{" "}
+        {format(new Date(shift.end), "EEE MMM d, h:mm a")}
+      </div>
+      <div className="opacity-80">{formatDistanceStrict(new Date(shift.start), new Date(shift.end))}</div>
+    </>
   )
 }
 

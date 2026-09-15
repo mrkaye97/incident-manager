@@ -226,11 +226,12 @@ async def _require_members(conn: Conn, member_ids: list[TeamMemberId]) -> None:
 
 class AppConfig(BaseModel):
     status_page_url: str
+    slack_team_id: str
 
 
 @router.get("/config")
 async def get_config() -> AppConfig:
-    return AppConfig(status_page_url=settings.status_page_url)
+    return AppConfig(status_page_url=settings.status_page_url, slack_team_id=await slack.team_id())
 
 
 class IncidentDetail(BaseModel):

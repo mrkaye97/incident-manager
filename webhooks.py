@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 
 from hatchet_sdk import V1WebhookHMACAlgorithm, V1WebhookHMACEncoding, V1WebhookSourceName
-from hatchet_sdk.clients.rest.exceptions import ConflictException
 from hatchet_sdk.clients.rest.models.v1_webhook_api_key_auth import V1WebhookAPIKeyAuth
 from hatchet_sdk.clients.rest.models.v1_webhook_hmac_auth import V1WebhookHMACAuth
 from pydantic import BaseModel

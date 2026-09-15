@@ -15,6 +15,7 @@ logger = logging.getLogger("incident-bot")
 async def push_page(
     conn: Connection,
     pushover: PushoverClient | None,
+    slack_team_id: str,
     page_id: PageId,
     paged_by: str,
     reason: str | None,
@@ -38,7 +39,7 @@ async def push_page(
         page.pushover_user_key,
         title=f"Paged: {page.incident_name}" if page.incident_name else "You've been paged",
         message=f"{paged_by}: {reason}" if reason else f"Paged by {paged_by}",
-        url=channel_url(page.slack_channel_id) if page.slack_channel_id else None,
+        url=channel_url(slack_team_id, page.slack_channel_id) if page.slack_channel_id else None,
         incident_id=page.incident_id,
     )
 

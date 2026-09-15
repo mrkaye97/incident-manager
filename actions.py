@@ -126,7 +126,7 @@ async def page_member(
         conn, member.id, input.incident_id, input.root_page_id, input.escalation_step
     )
 
-    await push_page(conn, pushover, page.id, input.actor.name, input.reason)
+    await push_page(conn, pushover, await slack.team_id(), page.id, input.actor.name, input.reason)
 
     if member.slack_user_id is not None:
         if page.slack_channel_id:

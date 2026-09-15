@@ -1,7 +1,7 @@
 import { format, formatDistanceStrict, formatDistanceToNow } from "date-fns"
 
-export const slackChannelUrl = (channelId: string) =>
-  `https://slack.com/app_redirect?channel=${encodeURIComponent(channelId)}`
+export const slackChannelUrl = (teamId: string, channelId: string) =>
+  `https://slack.com/app_redirect?team=${encodeURIComponent(teamId)}&channel=${encodeURIComponent(channelId)}`
 
 // TODO: deep-link to the incident once the status page integration exists
 export const statusPageUrl = (base: string, _incidentId: string) => base

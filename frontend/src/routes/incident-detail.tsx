@@ -73,23 +73,25 @@ export function IncidentDetailPage({ incidentId }: { incidentId: string }) {
               {duration(incident.start_time, incident.end_time)}
             </p>
             <div className="flex flex-wrap gap-4 pt-1 text-sm">
-              <a
-                href={slackChannelUrl(incident.slack_channel_id)}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 hover:underline"
-              >
-                <HashIcon className="size-4" /> Slack channel
-              </a>
               {config && (
-                <a
-                  href={statusPageUrl(config.status_page_url, incident.id)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1 hover:underline"
-                >
-                  <ExternalLinkIcon className="size-4" /> Status page
-                </a>
+                <>
+                  <a
+                    href={slackChannelUrl(config.slack_team_id, incident.slack_channel_id)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1 hover:underline"
+                  >
+                    <HashIcon className="size-4" /> Slack channel
+                  </a>
+                  <a
+                    href={statusPageUrl(config.status_page_url, incident.id)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1 hover:underline"
+                  >
+                    <ExternalLinkIcon className="size-4" /> Status page
+                  </a>
+                </>
               )}
             </div>
           </div>

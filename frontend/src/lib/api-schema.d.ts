@@ -457,6 +457,8 @@ export interface components {
         AppConfig: {
             /** Status Page Url */
             status_page_url: string;
+            /** Slack Team Id */
+            slack_team_id: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {

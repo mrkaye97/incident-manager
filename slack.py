@@ -40,8 +40,8 @@ def mention(user_id: SlackUserId) -> str:
     return f"<@{user_id}>"
 
 
-def channel_url(channel_id: SlackChannelId) -> str:
-    return f"https://slack.com/app_redirect?channel={channel_id}"
+def channel_url(team_id: str, channel_id: SlackChannelId) -> str:
+    return f"https://slack.com/app_redirect?team={team_id}&channel={channel_id}"
 
 
 class SlackClient:
@@ -53,9 +53,12 @@ class SlackClient:
                 AsyncRateLimitErrorRetryHandler(max_retry_count=3),
             ],
         )
+        self._team_id: str | None = None
 
     async def team_id(self) -> str:
-        return (await self._web.auth_test())["team_id"]
+        if self._team_id is None:
+            self._team_id = (await self._web.auth_test())["team_id"]
+        return self._team_id
 
     async def user_info(self, user_id: SlackUserId) -> SlackMember:
         return SlackMember.model_validate((await self._web.users_info(user=user_id))["user"])

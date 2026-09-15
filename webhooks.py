@@ -17,7 +17,7 @@ SLACK_SLASH_EVENT = "slack:slash"
 SLACK_INTERACTIVITY_EVENT = "slack:interactivity"
 HYPERDX_ALERT_EVENT = "hyperdx:alert"
 
-HYPERDX_SECRET_HEADER = "X-Webhook-Secret"
+HYPERDX_SECRET_HEADER = "x-api-key"
 
 
 class WebhookSpec(BaseModel):
@@ -75,5 +75,5 @@ async def ensure_webhooks(settings: Settings) -> None:
                 return_event_as_response_payload=False,
             )
             logger.info("created webhook %s: %s", spec.name, webhook_url(spec.name))
-        except ConflictException:
+        except Exception:
             logger.info("webhook %s already exists: %s", spec.name, webhook_url(spec.name))

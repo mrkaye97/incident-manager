@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 CREATE TABLE IF NOT EXISTS team_member (
-    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
     name TEXT NOT NULL,
     slack_user_id TEXT UNIQUE,
     slack_handle TEXT,
@@ -14,10 +14,12 @@ CREATE TYPE timerange AS RANGE (
     SUBTYPE = TIMESTAMPTZ
 );
 
+CREATE TYPE on_call_level AS ENUM ('PRIMARY', 'SECONDARY');
+
 CREATE TABLE IF NOT EXISTS on_call_rotation (
-    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    name TEXT NOT NULL UNIQUE,
-    member_ids BIGINT[] NOT NULL,
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    level on_call_level NOT NULL UNIQUE,
+    member_ids UUID[] NOT NULL,
     period_days INTEGER NOT NULL CHECK (period_days > 0),
     anchor TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -26,14 +28,14 @@ CREATE TABLE IF NOT EXISTS on_call_rotation (
 );
 
 CREATE TABLE IF NOT EXISTS on_call_override (
-    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    team_member_id BIGINT NOT NULL REFERENCES team_member(id),
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    team_member_id UUID NOT NULL REFERENCES team_member(id),
     shift timerange NOT NULL,
-    escalation_priority INTEGER NOT NULL,
+    level on_call_level NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT on_call_override_escalation_priority_shift_exclusion_constraint
-        EXCLUDE USING GIST (escalation_priority WITH =, shift WITH &&)
+    CONSTRAINT on_call_override_level_shift_exclusion_constraint
+        EXCLUDE USING GIST (level WITH =, shift WITH &&)
 );
 
 CREATE TYPE incident_status AS ENUM ('OPEN', 'RESOLVED');
@@ -42,7 +44,7 @@ CREATE TABLE IF NOT EXISTS incident (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     name TEXT NOT NULL,
     slack_channel_id TEXT NOT NULL,
-    lead BIGINT NOT NULL REFERENCES team_member(id),
+    lead UUID NOT NULL REFERENCES team_member(id),
     status incident_status NOT NULL DEFAULT 'OPEN',
     start_time TIMESTAMPTZ NOT NULL DEFAULT now(),
     end_time TIMESTAMPTZ,
@@ -52,16 +54,16 @@ CREATE TABLE IF NOT EXISTS incident (
 );
 
 CREATE TABLE IF NOT EXISTS page (
-    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
     incident_id UUID REFERENCES incident(id),
-    team_member_id BIGINT NOT NULL REFERENCES team_member(id),
+    team_member_id UUID NOT NULL REFERENCES team_member(id),
     paged_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     pushover_receipt TEXT UNIQUE,
     pushover_expires_at TIMESTAMPTZ,
     acknowledged_at TIMESTAMPTZ,
     -- escalation pages point at the page that started the chain
-    root_page_id BIGINT REFERENCES page(id),
+    root_page_id UUID REFERENCES page(id),
     escalation_step INTEGER,
     UNIQUE (root_page_id, escalation_step),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -69,17 +71,17 @@ CREATE TABLE IF NOT EXISTS page (
 );
 
 CREATE TABLE IF NOT EXISTS incident_action_item (
-    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
     incident_id UUID NOT NULL REFERENCES incident(id),
     description TEXT NOT NULL,
     is_completed BOOLEAN NOT NULL DEFAULT FALSE,
-    assignee_team_member_id BIGINT REFERENCES team_member(id),
+    assignee_team_member_id UUID REFERENCES team_member(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS alert (
-    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
     title TEXT NOT NULL,
     state TEXT,
     body TEXT,
@@ -117,7 +119,7 @@ LEFT JOIN team_member tm ON tm.id = ai.assignee_team_member_id;
 
 CREATE TABLE IF NOT EXISTS session (
     token_hash TEXT PRIMARY KEY,
-    team_member_id BIGINT NOT NULL REFERENCES team_member(id),
+    team_member_id UUID NOT NULL REFERENCES team_member(id),
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

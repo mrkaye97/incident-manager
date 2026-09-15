@@ -10,6 +10,10 @@ class Settings(BaseSettings):
 
     slack_client_secret: str
 
+    slack_signing_secret: str
+
+    hyperdx_webhook_secret: str
+
     pushover_app_token: str
 
     status_page_url: str = "https://status.example.com"

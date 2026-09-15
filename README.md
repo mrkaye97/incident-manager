@@ -32,6 +32,12 @@ with `-- record_class:` naming the Pydantic model in `db.py` each row maps to. `
 each query in a typed function. `make test` prepares every query against a fresh database built
 from `schema.sql` and checks result columns and types against those models.
 
+On startup the worker creates its Hatchet webhooks if they don't exist (existing ones are left
+untouched) and logs their URLs: `incident-bot-slack-commands` (Slack slash command Request URL),
+`incident-bot-slack-interactivity` (Slack Interactivity Request URL), and `incident-bot-hyperdx`
+(HyperDX webhook; configure HyperDX to send `HYPERDX_WEBHOOK_SECRET` in an `X-Webhook-Secret`
+header). Requires `SLACK_SIGNING_SECRET` and `HYPERDX_WEBHOOK_SECRET`.
+
 Sign-in is "Sign in with Slack" (OpenID Connect); any full member of the workspace can sign in, and
 signing in adds them to the team roster.
 In the Slack app, add `https://localhost:3000/api/auth/callback` as a Redirect URL and the

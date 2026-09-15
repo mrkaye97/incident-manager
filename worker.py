@@ -44,11 +44,17 @@ from slack import (
     page_member_modal,
     update_description_modal,
 )
+from webhooks import (
+    HYPERDX_ALERT_EVENT,
+    SLACK_INTERACTIVITY_EVENT,
+    SLACK_SLASH_EVENT,
+    ensure_webhooks,
+)
 
 logger = logging.getLogger("incident-bot")
 
 
-@hatchet.task(on_events=["slack:slash"], input_validator=SlackSlashCommand)
+@hatchet.task(on_events=[SLACK_SLASH_EVENT], input_validator=SlackSlashCommand)
 async def handle_incident_slash_command(
     event: SlackSlashCommand,
     _ctx: Context,
@@ -127,7 +133,7 @@ async def handle_incident_slash_command(
             await lifespan.slack.respond(event.response_url, commands.HELP_TEXT)
 
 
-@hatchet.task(on_events=["slack:interactivity"], input_validator=InteractivityPayload)
+@hatchet.task(on_events=[SLACK_INTERACTIVITY_EVENT], input_validator=InteractivityPayload)
 async def handle_interactivity(
     payload: InteractivityPayload,
     ctx: Context,
@@ -161,7 +167,7 @@ async def handle_interactivity(
 
 @hatchet.task(
     ## todo: idempotency here, probably?
-    on_events=["hyperdx:alert"],
+    on_events=[HYPERDX_ALERT_EVENT],
     input_validator=HyperDXAlert,
     concurrency=1,
 )
@@ -257,6 +263,7 @@ async def sync_page_acknowledgements(
 
 async def lifespan() -> AsyncGenerator[Lifespan, None]:
     settings = Settings()  # ty: ignore[missing-argument]
+    await ensure_webhooks(settings)
     pool = await create_pool(dsn=settings.database_url)
     slack = SlackClient(settings.slack_bot_oauth_token)
     pushover = PushoverClient(settings.pushover_app_token) if settings.pushover_app_token else None

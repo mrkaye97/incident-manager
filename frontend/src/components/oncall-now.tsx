@@ -5,7 +5,7 @@ import { PageDialog } from "@/components/page-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { oncallQuery } from "@/lib/api"
-import { priorityLabel } from "@/lib/format"
+import { levelLabel } from "@/lib/format"
 
 export function OnCallNow() {
   const { data: oncall = [], isLoading } = useQuery(oncallQuery)
@@ -21,13 +21,13 @@ export function OnCallNow() {
         )}
         {oncall.map((entry) => (
           <div
-            key={`${entry.escalation_priority}-${entry.team_member_id}`}
+            key={entry.level}
             className="flex items-center justify-between gap-2"
           >
             <div>
               <p className="font-medium">{entry.name}</p>
               <p className="text-xs text-muted-foreground">
-                {priorityLabel(entry.escalation_priority)}
+                {levelLabel(entry.level)}
               </p>
             </div>
             <PageDialog

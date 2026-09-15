@@ -5,7 +5,7 @@ import logging
 from asyncpg import Connection
 
 import db
-from internal.types import IncidentId
+from internal.types import IncidentId, PageId
 from pushover import PushoverClient
 from slack import channel_url
 
@@ -15,7 +15,7 @@ logger = logging.getLogger("incident-bot")
 async def push_page(
     conn: Connection,
     pushover: PushoverClient | None,
-    page_id: int,
+    page_id: PageId,
     paged_by: str,
     reason: str | None,
 ) -> None:
@@ -59,7 +59,7 @@ async def sync_acknowledgements(conn: Connection, pushover: PushoverClient) -> N
             await _silence_chain(conn, pushover, page.root_page_id)
 
 
-async def _silence_chain(conn: Connection, pushover: PushoverClient, root_page_id: int) -> None:
+async def _silence_chain(conn: Connection, pushover: PushoverClient, root_page_id: PageId) -> None:
     for page in await db.list_ringing_chain_pages(conn, root_page_id):
         await pushover.cancel_receipt(page.pushover_receipt)
         await db.stop_page_alert(conn, page.id)

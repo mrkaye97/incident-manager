@@ -3,29 +3,24 @@ from __future__ import annotations
 import math
 from datetime import datetime, timedelta
 
-import db
 from internal.types import Override, Rotation, Shift
 
 
 def rotation_shifts(rotation: Rotation, start: datetime, end: datetime) -> list[Shift]:
     period = timedelta(days=rotation.period_days)
     members = rotation.member_ids
-    depth = min(db.ESCALATION_LEVELS, len(members))
-
-    first_window = max(0, math.floor((start - rotation.anchor) / period))
     shifts: list[Shift] = []
 
-    k = first_window
+    k = max(0, math.floor((start - rotation.anchor) / period))
     while (window_start := rotation.anchor + k * period) < end:
-        for priority in range(1, depth + 1):
-            shifts.append(
-                Shift(
-                    team_member_id=members[(k + priority - 1) % len(members)],
-                    escalation_priority=priority,
-                    start=window_start,
-                    end=window_start + period,
-                )
+        shifts.append(
+            Shift(
+                team_member_id=members[k % len(members)],
+                level=rotation.level,
+                start=window_start,
+                end=window_start + period,
             )
+        )
         k += 1
 
     return shifts
@@ -37,7 +32,7 @@ def apply_overrides(shifts: list[Shift], overrides: list[Override]) -> list[Shif
     for shift in shifts:
         pieces = [shift]
         for o in overrides:
-            if o.escalation_priority != shift.escalation_priority:
+            if o.level != shift.level:
                 continue
             next_pieces: list[Shift] = []
             for piece in pieces:
@@ -54,7 +49,7 @@ def apply_overrides(shifts: list[Shift], overrides: list[Override]) -> list[Shif
     result.extend(
         Shift(
             team_member_id=o.team_member_id,
-            escalation_priority=o.escalation_priority,
+            level=o.level,
             start=o.start,
             end=o.end,
             override_id=o.id,
@@ -62,11 +57,11 @@ def apply_overrides(shifts: list[Shift], overrides: list[Override]) -> list[Shif
         for o in overrides
     )
 
-    return sorted(result, key=lambda s: (s.start, s.escalation_priority))
+    return sorted(result, key=lambda s: (s.start, s.level))
 
 
 def build_schedule(
-    rotation: Rotation | None, overrides: list[Override], start: datetime, end: datetime
+    rotations: list[Rotation], overrides: list[Override], start: datetime, end: datetime
 ) -> list[Shift]:
-    scheduled = rotation_shifts(rotation, start, end) if rotation else []
+    scheduled = [shift for rotation in rotations for shift in rotation_shifts(rotation, start, end)]
     return apply_overrides(scheduled, overrides)

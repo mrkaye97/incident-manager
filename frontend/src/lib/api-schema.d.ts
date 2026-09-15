@@ -279,19 +279,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/rotation": {
+    "/api/rotations": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Rotation */
-        get: operations["get_rotation_api_rotation_get"];
-        /** Put Rotation */
-        put: operations["put_rotation_api_rotation_put"];
+        /** List Rotations */
+        get: operations["list_rotations_api_rotations_get"];
+        put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rotations/{level}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Rotation */
+        put: operations["put_rotation_api_rotations__level__put"];
+        post?: never;
+        /** Delete Rotation */
+        delete: operations["delete_rotation_api_rotations__level__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -373,8 +390,11 @@ export interface components {
     schemas: {
         /** ActionItem */
         ActionItem: {
-            /** Id */
-            id: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
             /**
              * Incident Id
              * Format: uuid
@@ -387,7 +407,7 @@ export interface components {
             /** Is Completed */
             is_completed: boolean;
             /** Assignee Id */
-            assignee_id: number | null;
+            assignee_id: string | null;
             /** Assignee Name */
             assignee_name: string | null;
             /**
@@ -401,7 +421,7 @@ export interface components {
             /** Description */
             description: string;
             /** Assignee Id */
-            assignee_id?: number | null;
+            assignee_id?: string | null;
         };
         /** ActionItemUpdate */
         ActionItemUpdate: {
@@ -410,12 +430,15 @@ export interface components {
             /** Is Completed */
             is_completed?: boolean | null;
             /** Assignee Id */
-            assignee_id?: number | null;
+            assignee_id?: string | null;
         };
         /** AlertRecord */
         AlertRecord: {
-            /** Id */
-            id: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
             /** Title */
             title: string;
             /** State */
@@ -434,8 +457,6 @@ export interface components {
         AppConfig: {
             /** Status Page Url */
             status_page_url: string;
-            /** Escalation Levels */
-            escalation_levels: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -456,7 +477,7 @@ export interface components {
             /** Name */
             name: string;
             /** Lead Id */
-            lead_id?: number | null;
+            lead_id?: string | null;
             /** Description */
             description?: string | null;
         };
@@ -496,8 +517,11 @@ export interface components {
             start_time: string;
             /** End Time */
             end_time: string | null;
-            /** Lead Id */
-            lead_id: number;
+            /**
+             * Lead Id
+             * Format: uuid
+             */
+            lead_id: string;
             /** Lead Name */
             lead_name: string;
             /** Open Action Items */
@@ -512,8 +536,11 @@ export interface components {
         };
         /** Member */
         Member: {
-            /** Id */
-            id: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
             /** Name */
             name: string;
             /** Slack User Id */
@@ -536,21 +563,34 @@ export interface components {
         };
         /** OnCallEntry */
         OnCallEntry: {
-            /** Team Member Id */
-            team_member_id: number;
+            /**
+             * Team Member Id
+             * Format: uuid
+             */
+            team_member_id: string;
             /** Name */
             name: string;
             /** Slack User Id */
             slack_user_id: string | null;
-            /** Escalation Priority */
-            escalation_priority: number;
+            level: components["schemas"]["OnCallLevel"];
         };
+        /**
+         * OnCallLevel
+         * @enum {string}
+         */
+        OnCallLevel: "PRIMARY" | "SECONDARY";
         /** Override */
         Override: {
-            /** Id */
-            id: number;
-            /** Team Member Id */
-            team_member_id: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Team Member Id
+             * Format: uuid
+             */
+            team_member_id: string;
             /** Member Name */
             member_name: string;
             /**
@@ -563,13 +603,15 @@ export interface components {
              * Format: date-time
              */
             end: string;
-            /** Escalation Priority */
-            escalation_priority: number;
+            level: components["schemas"]["OnCallLevel"];
         };
         /** OverrideInput */
         OverrideInput: {
-            /** Team Member Id */
-            team_member_id: number;
+            /**
+             * Team Member Id
+             * Format: uuid
+             */
+            team_member_id: string;
             /**
              * Start
              * Format: date-time
@@ -580,13 +622,15 @@ export interface components {
              * Format: date-time
              */
             end: string;
-            /** Escalation Priority */
-            escalation_priority: number;
+            level: components["schemas"]["OnCallLevel"];
         };
         /** Page */
         Page: {
-            /** Id */
-            id: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
             /** Incident Id */
             incident_id: string | null;
             /** Slack Channel Id */
@@ -594,8 +638,11 @@ export interface components {
         };
         /** PageInput */
         PageInput: {
-            /** Team Member Id */
-            team_member_id: number;
+            /**
+             * Team Member Id
+             * Format: uuid
+             */
+            team_member_id: string;
             /** Incident Id */
             incident_id?: string | null;
             /** Reason */
@@ -603,12 +650,18 @@ export interface components {
         };
         /** PageRecord */
         PageRecord: {
-            /** Id */
-            id: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
             /** Incident Id */
             incident_id: string | null;
-            /** Team Member Id */
-            team_member_id: number;
+            /**
+             * Team Member Id
+             * Format: uuid
+             */
+            team_member_id: string;
             /** Member Name */
             member_name: string;
             /**
@@ -623,10 +676,14 @@ export interface components {
         };
         /** Rotation */
         Rotation: {
-            /** Id */
-            id: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            level: components["schemas"]["OnCallLevel"];
             /** Member Ids */
-            member_ids: number[];
+            member_ids: string[];
             /** Period Days */
             period_days: number;
             /**
@@ -638,7 +695,7 @@ export interface components {
         /** RotationInput */
         RotationInput: {
             /** Member Ids */
-            member_ids: number[];
+            member_ids: string[];
             /** Period Days */
             period_days: number;
             /**
@@ -649,10 +706,12 @@ export interface components {
         };
         /** Shift */
         Shift: {
-            /** Team Member Id */
-            team_member_id: number;
-            /** Escalation Priority */
-            escalation_priority: number;
+            /**
+             * Team Member Id
+             * Format: uuid
+             */
+            team_member_id: string;
+            level: components["schemas"]["OnCallLevel"];
             /**
              * Start
              * Format: date-time
@@ -664,7 +723,7 @@ export interface components {
              */
             end: string;
             /** Override Id */
-            override_id?: number | null;
+            override_id?: string | null;
         };
         /** TriggeredRun */
         TriggeredRun: {
@@ -1068,7 +1127,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                action_item_id: number;
+                action_item_id: string;
             };
             cookie?: never;
         };
@@ -1156,7 +1215,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                member_id: number;
+                member_id: string;
             };
             cookie?: never;
         };
@@ -1226,7 +1285,7 @@ export interface operations {
             };
         };
     };
-    get_rotation_api_rotation_get: {
+    list_rotations_api_rotations_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -1241,16 +1300,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Rotation"] | null;
+                    "application/json": components["schemas"]["Rotation"][];
                 };
             };
         };
     };
-    put_rotation_api_rotation_put: {
+    put_rotation_api_rotations__level__put: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                level: components["schemas"]["OnCallLevel"];
+            };
             cookie?: never;
         };
         requestBody: {
@@ -1267,6 +1328,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Rotation"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_rotation_api_rotations__level__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                level: components["schemas"]["OnCallLevel"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -1381,7 +1471,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                override_id: number;
+                override_id: string;
             };
             cookie?: never;
         };

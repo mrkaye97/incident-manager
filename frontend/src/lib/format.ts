@@ -15,5 +15,5 @@ export const ago = (iso: string) => formatDistanceToNow(new Date(iso), { addSuff
 export const duration = (start: string, end: string | null | undefined) =>
   formatDistanceStrict(new Date(start), end ? new Date(end) : new Date())
 
-export const priorityLabel = (priority: number) =>
-  priority === 1 ? "Primary" : priority === 2 ? "Secondary" : `P${priority}`
+export const levelLabel = (level: "PRIMARY" | "SECONDARY") =>
+  level === "PRIMARY" ? "Primary" : "Secondary"

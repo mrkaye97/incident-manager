@@ -235,7 +235,7 @@ function DescriptionCard({ incident }: { incident: Incident }) {
 
 function NewActionItem({ incidentId }: { incidentId: string }) {
   const [description, setDescription] = useState("")
-  const [assignee, setAssignee] = useState<number | null>(null)
+  const [assignee, setAssignee] = useState<string | null>(null)
   const create = useCreateActionItem(incidentId)
 
   const submit = (e: React.FormEvent) => {

@@ -9,6 +9,7 @@ import db
 from actions import ActionError
 from escalation import page_and_escalate
 from internal.types import (
+    ActionItemId,
     Actor,
     CreateActionItemInput,
     CreateIncidentInput,
@@ -180,7 +181,7 @@ async def submit_create_action_item(
 async def submit_complete_action_items(
     conn: Connection, slack: SlackClient, payload: InteractivityPayload
 ) -> None:
-    ids = [int(v) for v in payload.options("items") if v.isdigit()]
+    ids = [ActionItemId(UUID(v)) for v in payload.options("items")]
 
     if not ids:
         raise ActionError("pick at least one action item to complete.")

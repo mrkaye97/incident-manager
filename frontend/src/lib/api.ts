@@ -19,6 +19,7 @@ export type ActionItem = Schemas["ActionItem"]
 export type Member = Schemas["Member"]
 export type MemberInput = Schemas["MemberInput"]
 export type OnCallEntry = Schemas["OnCallEntry"]
+export type OnCallLevel = OnCallEntry["level"]
 export type Rotation = Schemas["Rotation"]
 export type RotationInput = Schemas["RotationInput"]
 export type Override = Schemas["Override"]
@@ -108,9 +109,9 @@ export const oncallQuery = queryOptions({
   refetchInterval: 60_000,
 })
 
-export const rotationQuery = queryOptions({
-  queryKey: ["oncall", "rotation"],
-  queryFn: () => unwrap(client.GET("/api/rotation")),
+export const rotationsQuery = queryOptions({
+  queryKey: ["oncall", "rotations"],
+  queryFn: () => unwrap(client.GET("/api/rotations")),
 })
 
 export const scheduleQuery = (start: string, end: string) =>
@@ -185,7 +186,7 @@ export const useCreateActionItem = (incidentId: string) =>
 
 export const useUpdateActionItem = () =>
   useApiMutation(
-    ({ id, ...body }: Schemas["ActionItemUpdate"] & { id: number }) =>
+    ({ id, ...body }: Schemas["ActionItemUpdate"] & { id: string }) =>
       unwrap(
         client.PATCH("/api/action-items/{action_item_id}", {
           params: { path: { action_item_id: id } },
@@ -197,7 +198,7 @@ export const useUpdateActionItem = () =>
 
 export const useSaveMember = () =>
   useApiMutation(
-    ({ id, ...body }: MemberInput & { id?: number }) =>
+    ({ id, ...body }: MemberInput & { id?: string }) =>
       id === undefined
         ? unwrap(client.POST("/api/members", { body }))
         : unwrap(client.PUT("/api/members/{member_id}", { params: { path: { member_id: id } }, body })),
@@ -211,10 +212,18 @@ export const useSyncMembers = () =>
   })
 
 export const useSaveRotation = () =>
-  useApiMutation((body: RotationInput) => unwrap(client.PUT("/api/rotation", { body })), {
-    invalidate: [["oncall"]],
-    success: "Rotation saved",
-  })
+  useApiMutation(
+    ({ level, ...body }: RotationInput & { level: OnCallLevel }) =>
+      unwrap(client.PUT("/api/rotations/{level}", { params: { path: { level } }, body })),
+    { invalidate: [["oncall"]], success: "Rotation saved" },
+  )
+
+export const useDeleteRotation = () =>
+  useApiMutation(
+    (level: OnCallLevel) =>
+      unwrap(client.DELETE("/api/rotations/{level}", { params: { path: { level } } })),
+    { invalidate: [["oncall"]], success: "Rotation removed" },
+  )
 
 export const useCreateOverride = () =>
   useApiMutation((body: OverrideInput) => unwrap(client.POST("/api/overrides", { body })), {
@@ -224,7 +233,7 @@ export const useCreateOverride = () =>
 
 export const useDeleteOverride = () =>
   useApiMutation(
-    (id: number) =>
+    (id: string) =>
       unwrap(client.DELETE("/api/overrides/{override_id}", { params: { path: { override_id: id } } })),
     { invalidate: [["oncall"]], success: "Override removed" },
   )

@@ -11,7 +11,12 @@ from asyncpg.pool import PoolConnectionProxy
 from pydantic import BaseModel, Field, field_validator
 
 IncidentId = NewType("IncidentId", UUID)
-TeamMemberId = NewType("TeamMemberId", int)
+TeamMemberId = NewType("TeamMemberId", UUID)
+PageId = NewType("PageId", UUID)
+ActionItemId = NewType("ActionItemId", UUID)
+AlertId = NewType("AlertId", UUID)
+RotationId = NewType("RotationId", UUID)
+OverrideId = NewType("OverrideId", UUID)
 SlackUserId = NewType("SlackUserId", str)
 SlackChannelId = NewType("SlackChannelId", str)
 PushoverUserKey = NewType("PushoverUserKey", str)
@@ -24,6 +29,11 @@ Conn: TypeAlias = "Connection[Record] | PoolConnectionProxy[Record]"
 class IncidentStatus(StrEnum):
     OPEN = "OPEN"
     RESOLVED = "RESOLVED"
+
+
+class OnCallLevel(StrEnum):
+    PRIMARY = "PRIMARY"
+    SECONDARY = "SECONDARY"
 
 
 class Member(BaseModel):
@@ -62,12 +72,12 @@ class IncidentSummary(BaseModel):
 
 
 class ActionItemOption(BaseModel):
-    id: int
+    id: ActionItemId
     description: str
 
 
 class ActionItem(BaseModel):
-    id: int
+    id: ActionItemId
     incident_id: IncidentId
     incident_name: str
     description: str
@@ -78,7 +88,7 @@ class ActionItem(BaseModel):
 
 
 class AlertRecord(BaseModel):
-    id: int
+    id: AlertId
     title: str
     state: str | None
     body: str | None
@@ -87,13 +97,13 @@ class AlertRecord(BaseModel):
 
 
 class Page(BaseModel):
-    id: int
+    id: PageId
     incident_id: IncidentId | None
     slack_channel_id: SlackChannelId | None
 
 
 class PageDelivery(BaseModel):
-    id: int
+    id: PageId
     member_name: str
     slack_user_id: SlackUserId | None
     pushover_user_key: PushoverUserKey | None
@@ -104,7 +114,7 @@ class PageDelivery(BaseModel):
 
 
 class PageRecord(BaseModel):
-    id: int
+    id: PageId
     incident_id: IncidentId | None
     team_member_id: TeamMemberId
     member_name: str
@@ -114,13 +124,13 @@ class PageRecord(BaseModel):
 
 
 class PendingAcknowledgement(BaseModel):
-    id: int
-    root_page_id: int
+    id: PageId
+    root_page_id: PageId
     pushover_receipt: PushoverReceipt
 
 
 class EscalationState(BaseModel):
-    root_page_id: int
+    root_page_id: PageId
     root_member_id: TeamMemberId
     incident_id: IncidentId | None
     incident_status: IncidentStatus | None
@@ -129,7 +139,8 @@ class EscalationState(BaseModel):
 
 
 class Rotation(BaseModel):
-    id: int
+    id: RotationId
+    level: OnCallLevel
     member_ids: list[TeamMemberId]
     period_days: int
     anchor: datetime
@@ -139,24 +150,24 @@ class OnCallEntry(BaseModel):
     team_member_id: TeamMemberId
     name: str
     slack_user_id: SlackUserId | None
-    escalation_priority: int
+    level: OnCallLevel
 
 
 class Override(BaseModel):
-    id: int
+    id: OverrideId
     team_member_id: TeamMemberId
     member_name: str
     start: datetime
     end: datetime
-    escalation_priority: int
+    level: OnCallLevel
 
 
 class Shift(BaseModel):
     team_member_id: TeamMemberId
-    escalation_priority: int
+    level: OnCallLevel
     start: datetime
     end: datetime
-    override_id: int | None = None
+    override_id: OverrideId | None = None
 
 
 class Subcommand(StrEnum):
@@ -335,16 +346,16 @@ class PageMemberInput(BaseModel):
     incident_id: IncidentId | None = None
     reason: str | None = None
     actor: Actor
-    root_page_id: int | None = None
+    root_page_id: PageId | None = None
     escalation_step: int | None = None
 
 
 class EscalatePageInput(BaseModel):
-    root_page_id: int
+    root_page_id: PageId
 
 
 class EscalationStepInput(BaseModel):
-    root_page_id: int
+    root_page_id: PageId
     step: int
 
 
@@ -371,7 +382,7 @@ class CreateActionItemInput(BaseModel):
 
 
 class UpdateActionItemInput(BaseModel):
-    action_item_id: int
+    action_item_id: ActionItemId
     description: str = Field(min_length=1)
     is_completed: bool
     assignee_id: TeamMemberId | None

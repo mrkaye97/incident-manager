@@ -22,7 +22,7 @@ export function CreateIncidentDialog() {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
-  const [leadId, setLeadId] = useState<number | null>(null)
+  const [leadId, setLeadId] = useState<string | null>(null)
   const [description, setDescription] = useState("")
   const create = useCreateIncident()
 

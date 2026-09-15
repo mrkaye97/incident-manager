@@ -22,6 +22,7 @@ import worker
 from actions import ActionError, NotFoundError
 from internal.types import (
     ActionItem,
+    ActionItemId,
     Actor,
     AlertRecord,
     Conn,
@@ -32,7 +33,9 @@ from internal.types import (
     IncidentSummary,
     Member,
     OnCallEntry,
+    OnCallLevel,
     Override,
+    OverrideId,
     Page,
     PageMemberInput,
     PageRecord,
@@ -218,14 +221,11 @@ async def _require_members(conn: Conn, member_ids: list[TeamMemberId]) -> None:
 
 class AppConfig(BaseModel):
     status_page_url: str
-    escalation_levels: int
 
 
 @router.get("/config")
 async def get_config() -> AppConfig:
-    return AppConfig(
-        status_page_url=settings.status_page_url, escalation_levels=db.ESCALATION_LEVELS
-    )
+    return AppConfig(status_page_url=settings.status_page_url)
 
 
 class IncidentDetail(BaseModel):
@@ -341,7 +341,7 @@ async def create_action_item(
 
 @router.patch("/action-items/{action_item_id}")
 async def update_action_item(
-    member: CurrentMemberDep, pool: PoolDep, action_item_id: int, body: ActionItemUpdate
+    member: CurrentMemberDep, pool: PoolDep, action_item_id: ActionItemId, body: ActionItemUpdate
 ) -> ActionItem:
     async with pool.acquire() as conn:
         item = await db.get_action_item(conn, action_item_id)
@@ -428,7 +428,7 @@ class OverrideInput(BaseModel):
     team_member_id: TeamMemberId
     start: datetime
     end: datetime
-    escalation_priority: int = Field(ge=1)
+    level: OnCallLevel
 
     @model_validator(mode="after")
     def _end_after_start(self) -> OverrideInput:
@@ -443,14 +443,14 @@ async def current_oncall(pool: PoolDep) -> list[OnCallEntry]:
         return await db.current_oncall(conn)
 
 
-@router.get("/rotation")
-async def get_rotation(pool: PoolDep) -> Rotation | None:
+@router.get("/rotations")
+async def list_rotations(pool: PoolDep) -> list[Rotation]:
     async with pool.acquire() as conn:
-        return await db.get_rotation(conn)
+        return await db.list_rotations(conn)
 
 
-@router.put("/rotation")
-async def put_rotation(pool: PoolDep, body: RotationInput) -> Rotation:
+@router.put("/rotations/{level}")
+async def put_rotation(pool: PoolDep, level: OnCallLevel, body: RotationInput) -> Rotation:
     if len(set(body.member_ids)) != len(body.member_ids):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "a member can only appear once in the rotation"
@@ -458,7 +458,21 @@ async def put_rotation(pool: PoolDep, body: RotationInput) -> Rotation:
 
     async with pool.acquire() as conn, conn.transaction():
         await _require_members(conn, body.member_ids)
-        return await db.upsert_rotation(conn, body.member_ids, body.period_days, body.anchor)
+        return await db.upsert_rotation(conn, level, body.member_ids, body.period_days, body.anchor)
+
+
+@router.delete("/rotations/{level}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_rotation(pool: PoolDep, level: OnCallLevel) -> None:
+    if level == OnCallLevel.PRIMARY:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "the primary rotation can't be removed"
+        )
+
+    async with pool.acquire() as conn:
+        deleted = await db.delete_rotation(conn, level)
+
+    if not deleted:
+        raise _not_found(f"{level.lower()} rotation")
 
 
 def _window(start: datetime | None, end: datetime | None) -> tuple[datetime, datetime]:
@@ -481,10 +495,10 @@ async def get_schedule(
     start, end = _window(start, end)
 
     async with pool.acquire() as conn:
-        rotation = await db.get_rotation(conn)
+        rotations = await db.list_rotations(conn)
         overrides = await db.list_overrides(conn, start, end)
 
-    return build_schedule(rotation, overrides, start, end)
+    return build_schedule(rotations, overrides, start, end)
 
 
 @router.get("/overrides")
@@ -503,17 +517,17 @@ async def create_override(pool: PoolDep, body: OverrideInput) -> Override:
         async with pool.acquire() as conn, conn.transaction():
             await _require_members(conn, [body.team_member_id])
             return await db.create_override(
-                conn, body.team_member_id, body.start, body.end, body.escalation_priority
+                conn, body.team_member_id, body.start, body.end, body.level
             )
     except ExclusionViolationError as e:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            f"overlaps an existing P{body.escalation_priority} override",
+            f"overlaps an existing {body.level.lower()} override",
         ) from e
 
 
 @router.delete("/overrides/{override_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_override(pool: PoolDep, override_id: int) -> None:
+async def delete_override(pool: PoolDep, override_id: OverrideId) -> None:
     async with pool.acquire() as conn:
         deleted = await db.delete_override(conn, override_id)
 

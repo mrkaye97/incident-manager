@@ -16,7 +16,7 @@ from aiosql.query_loader import QueryLoader
 from aiosql.types import QueryDatum
 
 import db
-from internal.types import IncidentStatus
+from internal.types import IncidentStatus, OnCallLevel
 
 SCHEMA = Path(__file__).parent.parent / "schema.sql"
 ADMIN_URL = os.environ.get(
@@ -33,8 +33,9 @@ PG_TYPES: dict[str, object] = {
     "varchar": str,
     "uuid": UUID,
     "timestamptz": datetime,
-    "int8[]": list[int],
+    "uuid[]": list[UUID],
     "incident_status": IncidentStatus,
+    "on_call_level": OnCallLevel,
 }
 
 # aiosql's AsyncPGAdapter doesn't quite match its own adapter protocol

@@ -10,7 +10,9 @@ from pydantic import BaseModel
 
 from internal.types import (
     ActionItem,
+    ActionItemId,
     ActionItemOption,
+    AlertId,
     AlertRecord,
     Conn,
     EscalationState,
@@ -21,9 +23,12 @@ from internal.types import (
     IncidentSummary,
     Member,
     OnCallEntry,
+    OnCallLevel,
     Override,
+    OverrideId,
     Page,
     PageDelivery,
+    PageId,
     PageRecord,
     PendingAcknowledgement,
     PushoverReceipt,
@@ -35,9 +40,6 @@ from internal.types import (
 )
 
 QUERIES_DIR = Path(__file__).parent / "queries"
-
-ESCALATION_LEVELS = 2
-GLOBAL_ROTATION_NAME = "default"
 
 T = TypeVar("T")
 
@@ -217,7 +219,7 @@ async def create_action_item(
     incident_id: IncidentId,
     description: str,
     assignee_member_id: TeamMemberId | None,
-) -> int:
+) -> ActionItemId:
     action_item_id = await queries.create_action_item(
         conn,
         incident_id=incident_id,
@@ -237,13 +239,13 @@ async def list_action_items(
     return await _all(queries.list_action_items(conn, incident_id=incident_id, open_only=open_only))
 
 
-async def get_action_item(conn: Conn, action_item_id: int) -> ActionItem | None:
+async def get_action_item(conn: Conn, action_item_id: ActionItemId) -> ActionItem | None:
     return await queries.get_action_item(conn, action_item_id=action_item_id)
 
 
 async def update_action_item(
     conn: Conn,
-    action_item_id: int,
+    action_item_id: ActionItemId,
     description: str,
     is_completed: bool,
     assignee_member_id: TeamMemberId | None,
@@ -264,7 +266,7 @@ async def record_alert(
     body: str | None,
     source_url: str | None,
     incident_id: IncidentId | None,
-) -> int:
+) -> AlertId:
     alert_id = await queries.record_alert(
         conn,
         title=title,
@@ -288,7 +290,7 @@ async def create_page(
     conn: Conn,
     team_member_id: TeamMemberId,
     incident_id: IncidentId | None,
-    root_page_id: int | None = None,
+    root_page_id: PageId | None = None,
     escalation_step: int | None = None,
 ) -> Page:
     page = await queries.create_page(
@@ -305,7 +307,7 @@ async def create_page(
     return page
 
 
-async def get_page_delivery(conn: Conn, page_id: int) -> PageDelivery | None:
+async def get_page_delivery(conn: Conn, page_id: PageId) -> PageDelivery | None:
     return await queries.get_page_delivery(conn, page_id=page_id)
 
 
@@ -314,7 +316,7 @@ async def list_pages(conn: Conn, incident_id: IncidentId | None, limit: int) -> 
 
 
 async def set_page_pushover_receipt(
-    conn: Conn, page_id: int, receipt: PushoverReceipt, expires_at: datetime
+    conn: Conn, page_id: PageId, receipt: PushoverReceipt, expires_at: datetime
 ) -> None:
     await queries.set_page_pushover_receipt(
         conn, page_id=page_id, pushover_receipt=receipt, pushover_expires_at=expires_at
@@ -325,45 +327,53 @@ async def list_pending_acknowledgements(conn: Conn) -> list[PendingAcknowledgeme
     return await _all(queries.list_pending_acknowledgements(conn))
 
 
-async def acknowledge_page(conn: Conn, page_id: int, acknowledged_at: datetime) -> None:
+async def acknowledge_page(conn: Conn, page_id: PageId, acknowledged_at: datetime) -> None:
     await queries.acknowledge_page(conn, page_id=page_id, acknowledged_at=acknowledged_at)
 
 
-async def get_escalation_state(conn: Conn, root_page_id: int, step: int) -> EscalationState | None:
+async def get_escalation_state(
+    conn: Conn, root_page_id: PageId, step: int
+) -> EscalationState | None:
     return await queries.get_escalation_state(conn, root_page_id=root_page_id, step=step)
 
 
-async def list_ringing_chain_pages(conn: Conn, root_page_id: int) -> list[PendingAcknowledgement]:
+async def list_ringing_chain_pages(
+    conn: Conn, root_page_id: PageId
+) -> list[PendingAcknowledgement]:
     return await _all(queries.list_ringing_chain_pages(conn, root_page_id=root_page_id))
 
 
-async def stop_page_alert(conn: Conn, page_id: int) -> None:
+async def stop_page_alert(conn: Conn, page_id: PageId) -> None:
     await queries.stop_page_alert(conn, page_id=page_id)
 
 
-async def get_rotation(conn: Conn, name: str = GLOBAL_ROTATION_NAME) -> Rotation | None:
-    return await queries.get_rotation(conn, name=name)
+async def list_rotations(conn: Conn) -> list[Rotation]:
+    return await _all(queries.list_rotations(conn))
 
 
 async def upsert_rotation(
     conn: Conn,
+    level: OnCallLevel,
     member_ids: list[TeamMemberId],
     period_days: int,
     anchor: datetime,
-    name: str = GLOBAL_ROTATION_NAME,
 ) -> Rotation:
     rotation = await queries.upsert_rotation(
-        conn, name=name, member_ids=member_ids, period_days=period_days, anchor=anchor
+        conn, level=level, member_ids=member_ids, period_days=period_days, anchor=anchor
     )
 
     if rotation is None:
-        raise UnexpectedDBError("Failed to upsert on-call rotation")
+        raise UnexpectedDBError(f"Failed to upsert {level} on-call rotation")
 
     return rotation
 
 
+async def delete_rotation(conn: Conn, level: OnCallLevel) -> bool:
+    return await queries.delete_rotation(conn, level=level) != "DELETE 0"
+
+
 async def current_oncall(conn: Conn) -> list[OnCallEntry]:
-    return await _all(queries.current_oncall(conn, escalation_levels=ESCALATION_LEVELS))
+    return await _all(queries.current_oncall(conn))
 
 
 async def list_overrides(conn: Conn, start: datetime, end: datetime) -> list[Override]:
@@ -375,14 +385,10 @@ async def create_override(
     team_member_id: TeamMemberId,
     start: datetime,
     end: datetime,
-    escalation_priority: int,
+    level: OnCallLevel,
 ) -> Override:
     override = await queries.create_override(
-        conn,
-        team_member_id=team_member_id,
-        start=start,
-        end=end,
-        escalation_priority=escalation_priority,
+        conn, team_member_id=team_member_id, start=start, end=end, level=level
     )
 
     if override is None:
@@ -391,7 +397,7 @@ async def create_override(
     return override
 
 
-async def delete_override(conn: Conn, override_id: int) -> bool:
+async def delete_override(conn: Conn, override_id: OverrideId) -> bool:
     return await queries.delete_override(conn, override_id=override_id) != "DELETE 0"
 
 

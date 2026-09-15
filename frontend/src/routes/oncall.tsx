@@ -33,19 +33,19 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  configQuery,
   membersQuery,
   overridesQuery,
-  rotationQuery,
+  rotationsQuery,
   scheduleQuery,
   useCreateOverride,
   useDeleteOverride,
+  useDeleteRotation,
   useSaveRotation,
   type Member,
+  type OnCallLevel,
   type Rotation,
-  type Shift,
 } from "@/lib/api"
-import { dateTime, priorityLabel } from "@/lib/format"
+import { dateTime, levelLabel } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 const WINDOW_DAYS = 28
@@ -61,7 +61,13 @@ const MEMBER_COLORS = [
   "bg-indigo-100 text-indigo-900 border-indigo-300",
 ]
 
-const memberColor = (id: number) => MEMBER_COLORS[id % MEMBER_COLORS.length]
+const LEVELS: OnCallLevel[] = ["PRIMARY", "SECONDARY"]
+
+const memberColor = (id: string) => {
+  let hash = 0
+  for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  return MEMBER_COLORS[hash % MEMBER_COLORS.length]
+}
 
 export function OnCallPage() {
   const [window] = useState(() => {
@@ -69,14 +75,23 @@ export function OnCallPage() {
     return { start: start.toISOString(), end: addDays(start, WINDOW_DAYS).toISOString() }
   })
   const { data: members = [] } = useQuery(membersQuery)
+  const { data: rotations = [], isLoading } = useQuery(rotationsQuery)
   const membersById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
 
   return (
     <div className="grid gap-6">
       <div className="grid gap-6 lg:grid-cols-3">
         <OnCallNow />
-        <div className="lg:col-span-2">
-          <RotationCard membersById={membersById} />
+        <div className="grid content-start gap-6 lg:col-span-2">
+          {!isLoading &&
+            LEVELS.map((level) => (
+              <RotationCard
+                key={level}
+                level={level}
+                rotation={rotations.find((r) => r.level === level) ?? null}
+                membersById={membersById}
+              />
+            ))}
         </div>
       </div>
       <ScheduleCard windowStart={window.start} windowEnd={window.end} membersById={membersById} />
@@ -92,23 +107,20 @@ function ScheduleCard({
 }: {
   windowStart: string
   windowEnd: string
-  membersById: Map<number, Member>
+  membersById: Map<string, Member>
 }) {
   const { data: shifts = [] } = useQuery(scheduleQuery(windowStart, windowEnd))
   const start = new Date(windowStart).getTime()
   const span = new Date(windowEnd).getTime() - start
   const now = Date.now()
 
-  const lanes = useMemo(() => {
-    const byPriority = new Map<number, Shift[]>()
-    for (const shift of shifts) {
-      byPriority.set(shift.escalation_priority, [
-        ...(byPriority.get(shift.escalation_priority) ?? []),
-        shift,
-      ])
-    }
-    return [...byPriority.entries()].sort(([a], [b]) => a - b)
-  }, [shifts])
+  const lanes = useMemo(
+    () =>
+      LEVELS.map((level) => [level, shifts.filter((s) => s.level === level)] as const).filter(
+        ([, laneShifts]) => laneShifts.length > 0,
+      ),
+    [shifts],
+  )
 
   const pct = (iso: string) =>
     Math.min(100, Math.max(0, ((new Date(iso).getTime() - start) / span) * 100))
@@ -134,9 +146,9 @@ function ScheduleCard({
                 </div>
               ))}
             </div>
-            {lanes.map(([priority, laneShifts]) => (
-              <div key={priority} className="contents">
-                <div className="self-center text-sm font-medium">{priorityLabel(priority)}</div>
+            {lanes.map(([level, laneShifts]) => (
+              <div key={level} className="contents">
+                <div className="self-center text-sm font-medium">{levelLabel(level)}</div>
                 <div className="relative h-10 rounded-md bg-muted">
                   {laneShifts.map((shift) => {
                     const left = pct(shift.start)
@@ -174,23 +186,41 @@ function ScheduleCard({
   )
 }
 
-function RotationCard({ membersById }: { membersById: Map<number, Member> }) {
-  const { data: rotation, isLoading } = useQuery(rotationQuery)
+function RotationCard({
+  level,
+  rotation,
+  membersById,
+}: {
+  level: OnCallLevel
+  rotation: Rotation | null
+  membersById: Map<string, Member>
+}) {
+  const remove = useDeleteRotation()
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Rotation</CardTitle>
+        <CardTitle>{levelLabel(level)} rotation</CardTitle>
         <CardDescription>
           {rotation
             ? `Rotates every ${rotation.period_days} day(s) since ${format(new Date(`${rotation.anchor.slice(0, 10)}T00:00:00`), "MMM d, yyyy")} (UTC).`
-            : "No rotation configured yet."}
+            : level === "PRIMARY"
+              ? "No primary rotation yet — nobody will be paged by default."
+              : "Optional. Without one, there's no secondary on call."}
         </CardDescription>
-        {!isLoading && (
-          <CardAction>
-            <RotationDialog rotation={rotation ?? null} membersById={membersById} />
-          </CardAction>
-        )}
+        <CardAction className="flex gap-2">
+          {rotation && level === "SECONDARY" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={remove.isPending}
+              onClick={() => remove.mutate(level)}
+            >
+              Remove
+            </Button>
+          )}
+          <RotationDialog level={level} rotation={rotation} membersById={membersById} />
+        </CardAction>
       </CardHeader>
       {rotation && (
         <CardContent>
@@ -199,7 +229,7 @@ function RotationCard({ membersById }: { membersById: Map<number, Member> }) {
               <li key={id} className="flex items-center gap-2">
                 {i > 0 && <span className="text-muted-foreground">→</span>}
                 <span className={cn("rounded border px-2 py-0.5", memberColor(id))}>
-                  {membersById.get(id)?.name ?? `#${id}`}
+                  {membersById.get(id)?.name ?? "Unknown"}
                 </span>
               </li>
             ))}
@@ -211,14 +241,16 @@ function RotationCard({ membersById }: { membersById: Map<number, Member> }) {
 }
 
 function RotationDialog({
+  level,
   rotation,
   membersById,
 }: {
+  level: OnCallLevel
   rotation: Rotation | null
-  membersById: Map<number, Member>
+  membersById: Map<string, Member>
 }) {
   const [open, setOpen] = useState(false)
-  const [memberIds, setMemberIds] = useState<number[]>([])
+  const [memberIds, setMemberIds] = useState<string[]>([])
   const [periodDays, setPeriodDays] = useState("7")
   const [anchor, setAnchor] = useState("")
   const save = useSaveRotation()
@@ -251,7 +283,7 @@ function RotationDialog({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Configure rotation</DialogTitle>
+          <DialogTitle>Configure {levelLabel(level).toLowerCase()} rotation</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4">
           <div className="grid gap-2">
@@ -260,7 +292,7 @@ function RotationDialog({
               {memberIds.map((id, i) => (
                 <li key={id} className="flex items-center gap-1 rounded-md border px-2 py-1 text-sm">
                   <span className="w-5 text-muted-foreground tabular-nums">{i + 1}.</span>
-                  <span className="flex-1">{membersById.get(id)?.name ?? `#${id}`}</span>
+                  <span className="flex-1">{membersById.get(id)?.name ?? "Unknown"}</span>
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -323,7 +355,12 @@ function RotationDialog({
             disabled={!valid || save.isPending}
             onClick={() =>
               save.mutate(
-                { member_ids: memberIds, period_days: period, anchor: `${anchor}T00:00:00Z` },
+                {
+                  level,
+                  member_ids: memberIds,
+                  period_days: period,
+                  anchor: `${anchor}T00:00:00Z`,
+                },
                 { onSuccess: () => setOpen(false) },
               )
             }
@@ -356,7 +393,7 @@ function OverridesCard({ windowStart, windowEnd }: { windowStart: string; window
           <ul className="divide-y text-sm">
             {overrides.map((o) => (
               <li key={o.id} className="flex flex-wrap items-center gap-3 py-2">
-                <Badge variant="outline">{priorityLabel(o.escalation_priority)}</Badge>
+                <Badge variant="outline">{levelLabel(o.level)}</Badge>
                 <span className="font-medium">{o.member_name}</span>
                 <span className="text-muted-foreground">
                   {dateTime(o.start)} → {dateTime(o.end)}
@@ -383,10 +420,9 @@ function OverridesCard({ windowStart, windowEnd }: { windowStart: string; window
 const toLocalInput = (d: Date) => format(d, "yyyy-MM-dd'T'HH:mm")
 
 function OverrideDialog() {
-  const { data: config } = useQuery(configQuery)
   const [open, setOpen] = useState(false)
-  const [memberId, setMemberId] = useState<number | null>(null)
-  const [priority, setPriority] = useState("1")
+  const [memberId, setMemberId] = useState<string | null>(null)
+  const [level, setLevel] = useState<OnCallLevel>("PRIMARY")
   const [start, setStart] = useState("")
   const [end, setEnd] = useState("")
   const create = useCreateOverride()
@@ -396,14 +432,13 @@ function OverrideDialog() {
     if (next) {
       const now = new Date()
       setMemberId(null)
-      setPriority("1")
+      setLevel("PRIMARY")
       setStart(toLocalInput(now))
       setEnd(toLocalInput(addDays(now, 1)))
     }
   }
 
   const valid = memberId !== null && start && end && new Date(end) > new Date(start)
-  const levels = Array.from({ length: config?.escalation_levels ?? 2 }, (_, i) => i + 1)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -422,15 +457,15 @@ function OverrideDialog() {
             <MemberSelect id="override-member" value={memberId} onChange={setMemberId} />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="override-priority">Covering</Label>
-            <Select value={priority} onValueChange={setPriority}>
-              <SelectTrigger id="override-priority" className="w-full">
+            <Label htmlFor="override-level">Covering</Label>
+            <Select value={level} onValueChange={(v) => setLevel(v as OnCallLevel)}>
+              <SelectTrigger id="override-level" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {levels.map((level) => (
-                  <SelectItem key={level} value={String(level)}>
-                    {priorityLabel(level)}
+                {LEVELS.map((l) => (
+                  <SelectItem key={l} value={l}>
+                    {levelLabel(l)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -465,7 +500,7 @@ function OverrideDialog() {
               create.mutate(
                 {
                   team_member_id: memberId,
-                  escalation_priority: Number(priority),
+                  level,
                   start: new Date(start).toISOString(),
                   end: new Date(end).toISOString(),
                 },

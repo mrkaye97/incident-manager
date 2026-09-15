@@ -19,8 +19,8 @@ export function MemberSelect({
   noneLabel = "Unassigned",
   id,
 }: {
-  value: number | null
-  onChange: (value: number | null) => void
+  value: string | null
+  onChange: (value: string | null) => void
   placeholder?: string
   allowNone?: boolean
   noneLabel?: string
@@ -30,8 +30,8 @@ export function MemberSelect({
 
   return (
     <Select
-      value={value === null ? (allowNone ? NONE : "") : String(value)}
-      onValueChange={(v) => onChange(v === NONE ? null : Number(v))}
+      value={value ?? (allowNone ? NONE : "")}
+      onValueChange={(v) => onChange(v === NONE ? null : v)}
     >
       <SelectTrigger id={id} className="w-full">
         <SelectValue placeholder={placeholder} />
@@ -39,7 +39,7 @@ export function MemberSelect({
       <SelectContent>
         {allowNone && <SelectItem value={NONE}>{noneLabel}</SelectItem>}
         {members.map((m) => (
-          <SelectItem key={m.id} value={String(m.id)}>
+          <SelectItem key={m.id} value={m.id}>
             {m.name}
             {!m.slack_user_id && <span className="text-muted-foreground"> (no Slack)</span>}
           </SelectItem>

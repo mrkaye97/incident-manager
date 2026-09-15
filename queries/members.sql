@@ -25,7 +25,7 @@ WHERE id = :member_id;
 
 
 -- name: existing_member_ids(member_ids)
-SELECT id FROM team_member WHERE id = ANY(:member_ids::BIGINT[]);
+SELECT id FROM team_member WHERE id = ANY(:member_ids::UUID[]);
 
 
 -- name: create_member(name, slack_user_id, slack_handle, pushover_user_key)^

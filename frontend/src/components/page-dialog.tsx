@@ -31,12 +31,12 @@ export function PageDialog({
   incidentId = null,
   trigger,
 }: {
-  memberId?: number | null
+  memberId?: string | null
   incidentId?: string | null
   trigger?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
-  const [target, setTarget] = useState<number | null>(memberId)
+  const [target, setTarget] = useState<string | null>(memberId)
   const [incident, setIncident] = useState<string | null>(incidentId)
   const [reason, setReason] = useState("")
   const { data: openIncidents = [] } = useQuery({ ...incidentsQuery("OPEN"), enabled: open })

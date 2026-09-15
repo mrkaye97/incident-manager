@@ -17,6 +17,7 @@ ActionItemId = NewType("ActionItemId", UUID)
 AlertId = NewType("AlertId", UUID)
 RotationId = NewType("RotationId", UUID)
 OverrideId = NewType("OverrideId", UUID)
+CustomerId = NewType("CustomerId", UUID)
 SlackUserId = NewType("SlackUserId", str)
 SlackChannelId = NewType("SlackChannelId", str)
 PushoverUserKey = NewType("PushoverUserKey", str)
@@ -69,6 +70,12 @@ class IncidentSummary(BaseModel):
     lead_name: str
     open_action_items: int
     total_action_items: int
+    customer_ids: list[CustomerId]
+
+
+class Customer(BaseModel):
+    id: CustomerId
+    name: str
 
 
 class ActionItemOption(BaseModel):
@@ -338,6 +345,13 @@ class CreateIncidentInput(BaseModel):
     name: str = Field(min_length=1)
     lead_member_id: TeamMemberId | None = None
     description: str | None = None
+    customer_ids: list[CustomerId] = Field(default_factory=list)
+    actor: Actor
+
+
+class UpdateIncidentCustomersInput(BaseModel):
+    incident_id: IncidentId
+    customer_ids: list[CustomerId]
     actor: Actor
 
 

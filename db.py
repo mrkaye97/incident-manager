@@ -15,6 +15,8 @@ from internal.types import (
     AlertId,
     AlertRecord,
     Conn,
+    Customer,
+    CustomerId,
     EscalationState,
     Incident,
     IncidentId,
@@ -66,6 +68,7 @@ RECORD_CLASSES: dict[str, type[BaseModel]] = {
         OnCallEntry,
         Override,
         EscalationState,
+        Customer,
     )
 }
 
@@ -196,6 +199,33 @@ async def update_incident_description(
     await queries.update_incident_description(
         conn, incident_id=incident_id, description=description
     )
+
+
+async def set_incident_customers(
+    conn: Conn, incident_id: IncidentId, customer_ids: list[CustomerId]
+) -> None:
+    await queries.set_incident_customers(conn, incident_id=incident_id, customer_ids=customer_ids)
+
+
+async def list_customers(conn: Conn) -> list[Customer]:
+    return await _all(queries.list_customers(conn))
+
+
+async def get_customers(conn: Conn, customer_ids: list[CustomerId]) -> list[Customer]:
+    return await _all(queries.get_customers(conn, customer_ids=customer_ids))
+
+
+async def create_customer(conn: Conn, name: str) -> Customer:
+    customer = await queries.create_customer(conn, name=name)
+
+    if customer is None:
+        raise UnexpectedDBError(f"Failed to create customer {name}")
+
+    return customer
+
+
+async def update_customer(conn: Conn, customer_id: CustomerId, name: str) -> Customer | None:
+    return await queries.update_customer(conn, customer_id=customer_id, name=name)
 
 
 async def resolve_incident(conn: Conn, incident_id: IncidentId) -> IncidentSummary | None:

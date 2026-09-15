@@ -29,6 +29,8 @@ from internal.types import (
     Conn,
     CreateActionItemInput,
     CreateIncidentInput,
+    Customer,
+    CustomerId,
     IncidentId,
     IncidentStatus,
     IncidentSummary,
@@ -47,6 +49,7 @@ from internal.types import (
     SlackUserId,
     TeamMemberId,
     UpdateActionItemInput,
+    UpdateIncidentCustomersInput,
     UpdateIncidentDescriptionInput,
 )
 from members import is_org_human
@@ -245,6 +248,11 @@ class IncidentCreate(BaseModel):
     name: str = Field(min_length=1)
     lead_id: TeamMemberId | None = None
     description: str | None = None
+    customer_ids: list[CustomerId] = Field(default_factory=list)
+
+
+class IncidentCustomersUpdate(BaseModel):
+    customer_ids: list[CustomerId]
 
 
 class IncidentUpdate(BaseModel):
@@ -285,6 +293,7 @@ async def create_incident(member: CurrentMemberDep, body: IncidentCreate) -> Inc
             name=body.name,
             lead_member_id=body.lead_id,
             description=body.description,
+            customer_ids=body.customer_ids,
             actor=_actor(member),
         ),
     )
@@ -300,6 +309,51 @@ async def update_incident(
             incident_id=incident_id, description=body.description, actor=_actor(member)
         ),
     )
+
+
+@router.put("/incidents/{incident_id}/customers")
+async def update_incident_customers(
+    member: CurrentMemberDep, incident_id: IncidentId, body: IncidentCustomersUpdate
+) -> IncidentSummary:
+    return await _run(
+        worker.update_incident_customers,
+        UpdateIncidentCustomersInput(
+            incident_id=incident_id, customer_ids=body.customer_ids, actor=_actor(member)
+        ),
+    )
+
+
+class CustomerInput(BaseModel):
+    name: str = Field(min_length=1)
+
+
+@router.get("/customers")
+async def list_customers(pool: PoolDep) -> list[Customer]:
+    async with pool.acquire() as conn:
+        return await db.list_customers(conn)
+
+
+@router.post("/customers", status_code=status.HTTP_201_CREATED)
+async def create_customer(pool: PoolDep, body: CustomerInput) -> Customer:
+    try:
+        async with pool.acquire() as conn:
+            return await db.create_customer(conn, body.name.strip())
+    except UniqueViolationError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, "a customer with that name exists") from e
+
+
+@router.put("/customers/{customer_id}")
+async def update_customer(pool: PoolDep, customer_id: CustomerId, body: CustomerInput) -> Customer:
+    try:
+        async with pool.acquire() as conn:
+            customer = await db.update_customer(conn, customer_id, body.name.strip())
+    except UniqueViolationError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, "a customer with that name exists") from e
+
+    if customer is None:
+        raise _not_found("customer")
+
+    return customer
 
 
 @router.post("/incidents/{incident_id}/resolve")

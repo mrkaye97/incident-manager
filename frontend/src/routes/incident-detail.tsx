@@ -11,6 +11,7 @@ import {
 import { useState } from "react"
 
 import { ActionItemList } from "@/components/action-item-list"
+import { AffectedCustomers } from "@/components/customers"
 import { MemberSelect } from "@/components/member-select"
 import { PageDialog } from "@/components/page-dialog"
 import { StatusBadge } from "@/components/status-badge"
@@ -72,6 +73,7 @@ export function IncidentDetailPage({ incidentId }: { incidentId: string }) {
               {incident.end_time ? "lasted" : "ongoing for"}{" "}
               {duration(incident.start_time, incident.end_time)}
             </p>
+            <AffectedCustomers incident={incident} />
             <div className="flex flex-wrap gap-4 pt-1 text-sm">
               {config && (
                 <>

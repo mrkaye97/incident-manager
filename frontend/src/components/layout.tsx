@@ -14,6 +14,7 @@ const NAV = [
   { to: "/action-items", label: "Action items" },
   { to: "/oncall", label: "On-call" },
   { to: "/team", label: "Team" },
+  { to: "/customers", label: "Customers" },
 ] as const
 
 export function Layout() {

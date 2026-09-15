@@ -28,6 +28,7 @@ from internal.types import (
     SlackSlashCommand,
     Subcommand,
     UpdateActionItemInput,
+    UpdateIncidentCustomersInput,
     UpdateIncidentDescriptionInput,
     ViewMetadata,
 )
@@ -210,6 +211,16 @@ async def resolve_incident(
     return await actions.resolve_incident(conn, lifespan.slack, lifespan.pushover, input)
 
 
+@hatchet.task(input_validator=UpdateIncidentCustomersInput, retries=0)
+async def update_incident_customers(
+    input: UpdateIncidentCustomersInput,
+    _ctx: Context,
+    conn: ConnectionDep,
+    lifespan: LifespanDep,
+) -> IncidentSummary:
+    return await actions.update_incident_customers(conn, lifespan.slack, input)
+
+
 @hatchet.task(input_validator=UpdateIncidentDescriptionInput, retries=0)
 async def update_incident_description(
     input: UpdateIncidentDescriptionInput,
@@ -286,6 +297,7 @@ def main() -> None:
             page_member,
             resolve_incident,
             update_incident_description,
+            update_incident_customers,
             create_action_item,
             update_action_item,
             escalate_page,

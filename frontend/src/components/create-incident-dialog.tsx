@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router"
 import { PlusIcon } from "lucide-react"
 import { useState } from "react"
 
+import { CustomerCheckboxes } from "@/components/customers"
 import { MemberSelect } from "@/components/member-select"
 import { Button } from "@/components/ui/button"
 import {
@@ -24,6 +25,7 @@ export function CreateIncidentDialog() {
   const [name, setName] = useState("")
   const [leadId, setLeadId] = useState<string | null>(null)
   const [description, setDescription] = useState("")
+  const [customerIds, setCustomerIds] = useState<string[]>([])
   const create = useCreateIncident()
 
   const onOpenChange = (next: boolean) => {
@@ -32,13 +34,19 @@ export function CreateIncidentDialog() {
       setName("")
       setLeadId(null)
       setDescription("")
+      setCustomerIds([])
     }
   }
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     create.mutate(
-      { name: name.trim(), lead_id: leadId, description: description.trim() || null },
+      {
+        name: name.trim(),
+        lead_id: leadId,
+        description: description.trim() || null,
+        customer_ids: customerIds,
+      },
       {
         onSuccess: (incident) => {
           setOpen(false)
@@ -74,6 +82,10 @@ export function CreateIncidentDialog() {
               value={leadId}
               onChange={setLeadId}
             />
+          </div>
+          <div className="grid gap-2">
+            <Label>Affected customers</Label>
+            <CustomerCheckboxes value={customerIds} onChange={setCustomerIds} />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="incident-description">Description</Label>

@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router"
 
+import { CustomerBadges } from "@/components/customers"
 import { StatusBadge } from "@/components/status-badge"
 import {
   Table,
@@ -24,6 +25,7 @@ export function IncidentTable({ incidents }: { incidents: Incident[] }) {
           <TableHead>Incident</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Lead</TableHead>
+          <TableHead>Customers</TableHead>
           <TableHead>Started</TableHead>
           <TableHead>Duration</TableHead>
           <TableHead className="text-right">Action items</TableHead>
@@ -45,6 +47,9 @@ export function IncidentTable({ incidents }: { incidents: Incident[] }) {
               <StatusBadge status={incident.status} />
             </TableCell>
             <TableCell>{incident.lead_name}</TableCell>
+            <TableCell>
+              <CustomerBadges customerIds={incident.customer_ids} />
+            </TableCell>
             <TableCell className="text-muted-foreground">{ago(incident.start_time)}</TableCell>
             <TableCell className="text-muted-foreground">
               {duration(incident.start_time, incident.end_time)}

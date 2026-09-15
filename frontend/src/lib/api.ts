@@ -13,6 +13,7 @@ type Schemas = components["schemas"]
 
 export type AppConfig = Schemas["AppConfig"]
 export type Incident = Schemas["IncidentSummary"]
+export type Customer = Schemas["Customer"]
 export type IncidentDetail = Schemas["IncidentDetail"]
 export type IncidentStatus = Incident["status"]
 export type ActionItem = Schemas["ActionItem"]
@@ -71,6 +72,11 @@ export async function logout() {
   await client.POST("/api/auth/logout")
   window.location.assign("/login")
 }
+
+export const customersQuery = queryOptions({
+  queryKey: ["customers"],
+  queryFn: () => unwrap(client.GET("/api/customers")),
+})
 
 export const configQuery = queryOptions({
   queryKey: ["config"],
@@ -159,6 +165,32 @@ export const useUpdateIncident = (id: string) =>
         }),
       ),
     { invalidate: [["incidents"]], success: "Description updated" },
+  )
+
+export const useSaveCustomer = () =>
+  useApiMutation(
+    ({ id, name }: { id?: string; name: string }) =>
+      id === undefined
+        ? unwrap(client.POST("/api/customers", { body: { name } }))
+        : unwrap(
+            client.PUT("/api/customers/{customer_id}", {
+              params: { path: { customer_id: id } },
+              body: { name },
+            }),
+          ),
+    { invalidate: [["customers"]], success: "Customer saved" },
+  )
+
+export const useUpdateIncidentCustomers = (id: string) =>
+  useApiMutation(
+    (customer_ids: string[]) =>
+      unwrap(
+        client.PUT("/api/incidents/{incident_id}/customers", {
+          params: { path: { incident_id: id } },
+          body: { customer_ids },
+        }),
+      ),
+    { invalidate: [["incidents"]], success: "Affected customers updated" },
   )
 
 export const useResolveIncident = (id: string) =>

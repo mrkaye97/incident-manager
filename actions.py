@@ -12,6 +12,8 @@ from internal.types import (
     Actor,
     CreateActionItemInput,
     CreateIncidentInput,
+    Customer,
+    CustomerId,
     IncidentId,
     IncidentSummary,
     Member,
@@ -22,6 +24,7 @@ from internal.types import (
     SlackUserId,
     TeamMemberId,
     UpdateActionItemInput,
+    UpdateIncidentCustomersInput,
     UpdateIncidentDescriptionInput,
 )
 from paging import cancel_incident_pages, push_page
@@ -71,6 +74,19 @@ async def _require_incident(conn: Connection, incident_id: IncidentId) -> Incide
     return incident
 
 
+async def _require_customers(conn: Connection, customer_ids: list[CustomerId]) -> list[Customer]:
+    customers = await db.get_customers(conn, list(set(customer_ids)))
+
+    if unknown := set(customer_ids) - {c.id for c in customers}:
+        raise NotFoundError(f"unknown customer(s): {', '.join(sorted(map(str, unknown)))}")
+
+    return customers
+
+
+def _customer_names(customers: list[Customer]) -> str:
+    return ", ".join(c.name for c in customers)
+
+
 def page_text(
     target_slack_id: SlackUserId,
     paged_by: str,
@@ -96,8 +112,12 @@ async def create_incident(
         lead_id = oncall[0].team_member_id
 
     lead = await _require_member(conn, lead_id)
+    customers = await _require_customers(conn, input.customer_ids)
     channel_id = await slack.create_channel(_incident_channel_name(input.name))
     incident_id = await db.create_incident(conn, input.name, channel_id, lead.id, input.description)
+
+    if customers:
+        await db.set_incident_customers(conn, incident_id, [c.id for c in customers])
 
     await slack.invite_users(
         channel_id, {u for u in (input.actor.slack_user_id, lead.slack_user_id) if u}
@@ -105,7 +125,8 @@ async def create_incident(
     await slack.post_message(
         channel_id,
         f":rotating_light: Incident *{input.name}* (id `{incident_id}`) opened by "
-        f"{_who(input.actor)} — lead {_member_label(lead)}.",
+        f"{_who(input.actor)} — lead {_member_label(lead)}."
+        + (f" Affected customers: {_customer_names(customers)}." if customers else ""),
     )
 
     return await _require_incident(conn, incident_id)
@@ -164,6 +185,33 @@ async def resolve_incident(
         f":checkered_flag: {_who(input.actor)} resolved incident *{incident.name}*.{note}",
     )
     await slack.archive_channel(incident.slack_channel_id)
+
+    return incident
+
+
+async def update_incident_customers(
+    conn: Connection, slack: SlackClient, input: UpdateIncidentCustomersInput
+) -> IncidentSummary:
+    before = await _require_incident(conn, input.incident_id)
+    customers = await _require_customers(conn, input.customer_ids)
+
+    await db.set_incident_customers(conn, input.incident_id, [c.id for c in customers])
+    incident = await _require_incident(conn, input.incident_id)
+
+    added = [c for c in customers if c.id not in before.customer_ids]
+    removed = await db.get_customers(
+        conn, [c for c in before.customer_ids if c not in incident.customer_ids]
+    )
+    changes = [
+        f"marked {_customer_names(added)} as affected" if added else "",
+        f"removed {_customer_names(removed)}" if removed else "",
+    ]
+
+    if added or removed:
+        await slack.post_message(
+            incident.slack_channel_id,
+            f":busts_in_silhouette: {_who(input.actor)} {' and '.join(c for c in changes if c)}.",
+        )
 
     return incident
 

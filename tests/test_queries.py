@@ -34,6 +34,7 @@ PG_TYPES: dict[str, object] = {
     "uuid": UUID,
     "timestamptz": datetime,
     "uuid[]": list[UUID],
+    "text[]": list[str],
     "incident_status": IncidentStatus,
     "on_call_level": OnCallLevel,
 }

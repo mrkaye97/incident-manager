@@ -92,13 +92,34 @@ CREATE TABLE IF NOT EXISTS alert (
 
 CREATE INDEX IF NOT EXISTS alert_title_idx ON alert (title);
 
+CREATE TABLE IF NOT EXISTS customer (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    name TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS incident_customer (
+    incident_id UUID NOT NULL REFERENCES incident(id),
+    customer_id UUID NOT NULL REFERENCES customer(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (incident_id, customer_id)
+);
+
 CREATE OR REPLACE VIEW incident_summary AS
 SELECT
     i.id, i.name, i.status, i.slack_channel_id, i.description, i.start_time, i.end_time,
     i.lead AS lead_id,
     tm.name AS lead_name,
     ai.open_action_items,
-    ai.total_action_items
+    ai.total_action_items,
+    ARRAY(
+        SELECT ic.customer_id
+        FROM incident_customer ic
+        JOIN customer c ON c.id = ic.customer_id
+        WHERE ic.incident_id = i.id
+        ORDER BY c.name
+    ) AS customer_ids
 FROM incident i
 JOIN team_member tm ON tm.id = i.lead
 CROSS JOIN LATERAL (

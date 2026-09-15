@@ -2,6 +2,7 @@ import { Outlet, createRootRoute, createRoute, createRouter } from "@tanstack/re
 
 import { Layout } from "@/components/layout"
 import { ActionItemsPage } from "@/routes/action-items"
+import { CustomersPage } from "@/routes/customers"
 import { IncidentDetailPage } from "@/routes/incident-detail"
 import { IncidentsPage, type IncidentsSearch } from "@/routes/incidents"
 import { LoginPage, type LoginSearch } from "@/routes/login"
@@ -68,6 +69,12 @@ const oncallRoute = createRoute({
   component: OnCallPage,
 })
 
+const customersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/customers",
+  component: CustomersPage,
+})
+
 const teamRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/team",
@@ -84,6 +91,7 @@ export const router = createRouter({
       actionItemsRoute,
       oncallRoute,
       teamRoute,
+      customersRoute,
     ]),
   ]),
 })

@@ -56,3 +56,15 @@ UPDATE incident
 SET status = 'RESOLVED', end_time = now(), updated_at = now()
 WHERE id = :incident_id AND status = 'OPEN'
 RETURNING id;
+
+
+-- name: set_incident_customers(incident_id, customer_ids)$
+WITH removed AS (
+    DELETE FROM incident_customer
+    WHERE incident_id = :incident_id AND customer_id <> ALL(:customer_ids::UUID[])
+), added AS (
+    INSERT INTO incident_customer (incident_id, customer_id)
+    SELECT :incident_id, unnest(:customer_ids::UUID[])
+    ON CONFLICT DO NOTHING
+)
+SELECT :incident_id::UUID;

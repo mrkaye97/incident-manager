@@ -5,8 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { loginUrl } from "@/lib/api"
 
 const ERRORS: Record<string, string> = {
-  not_on_roster:
-    "Your Slack account isn't on the team roster. Ask someone to sync the team from Slack.",
+  not_allowed: "Only full members of the Slack workspace can sign in.",
   invalid_state: "That sign-in link expired. Try again.",
   slack_error: "Slack couldn't complete the sign-in. Try again.",
   access_denied: "Sign-in was cancelled.",

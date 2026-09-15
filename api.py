@@ -15,6 +15,7 @@ from fastapi.responses import RedirectResponse, Response
 from hatchet_sdk import FailedTaskRunExceptionGroup
 from hatchet_sdk.runnables.workflow import Standalone
 from pydantic import BaseModel, Field, model_validator
+from slack_sdk.errors import SlackApiError
 
 import auth
 import db
@@ -48,10 +49,13 @@ from internal.types import (
     UpdateActionItemInput,
     UpdateIncidentDescriptionInput,
 )
+from members import is_org_human
 from schedule import build_schedule
 from settings import Settings
+from slack import SlackClient
 
 settings = Settings()  # ty: ignore[missing-argument]
+slack = SlackClient(settings.slack_bot_oauth_token)
 
 TASK_TIMEOUT_SECONDS = 15
 
@@ -147,18 +151,19 @@ async def auth_callback(
         return _login_redirect("invalid_state")
 
     try:
-        slack_user_id = await auth.slack_user_id_for_code(
+        identity = await auth.slack_identity_for_code(
             settings.slack_client_id, settings.slack_client_secret, code, _redirect_uri()
         )
-    except auth.SlackAuthError:
+        team_id = await slack.team_id()
+        profile = await slack.user_info(identity.user_id)
+    except (auth.SlackAuthError, SlackApiError):
         return _login_redirect("slack_error")
 
+    if identity.team_id != team_id or not is_org_human(profile, team_id):
+        return _login_redirect("not_allowed")
+
     async with pool.acquire() as conn:
-        member = await db.get_member_by_slack_id(conn, slack_user_id)
-
-        if member is None:
-            return _login_redirect("not_on_roster")
-
+        member = await db.upsert_member(conn, profile.id, profile.display_name, profile.name)
         token = auth.new_token()
         await db.create_session(conn, auth.hash_token(token), member.id, auth.session_expiry())
 

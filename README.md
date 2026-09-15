@@ -32,7 +32,8 @@ with `-- record_class:` naming the Pydantic model in `db.py` each row maps to. `
 each query in a typed function. `make test` prepares every query against a fresh database built
 from `schema.sql` and checks result columns and types against those models.
 
-Sign-in is "Sign in with Slack" (OpenID Connect); only people on the team roster can sign in.
+Sign-in is "Sign in with Slack" (OpenID Connect); any full member of the workspace can sign in, and
+signing in adds them to the team roster.
 In the Slack app, add `https://localhost:3000/api/auth/callback` as a Redirect URL and the
 `openid`, `email`, `profile` user scopes, then set `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET`.
 Set `APP_URL` (and `API_URL`, if the API is on a different origin) when deploying.

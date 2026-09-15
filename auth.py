@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 import aiohttp
+from pydantic import BaseModel
 
 from internal.types import SlackUserId
 
@@ -69,9 +70,14 @@ async def _slack(
     return body
 
 
-async def slack_user_id_for_code(
+class SlackIdentity(BaseModel):
+    user_id: SlackUserId
+    team_id: str
+
+
+async def slack_identity_for_code(
     client_id: str, client_secret: str, code: str, redirect_uri: str
-) -> SlackUserId:
+) -> SlackIdentity:
     async with aiohttp.ClientSession() as session:
         token = await _slack(
             session,
@@ -89,4 +95,7 @@ async def slack_user_id_for_code(
             headers={"Authorization": f"Bearer {token['access_token']}"},
         )
 
-    return SlackUserId(user["https://slack.com/user_id"])
+    return SlackIdentity(
+        user_id=SlackUserId(user["https://slack.com/user_id"]),
+        team_id=user["https://slack.com/team_id"],
+    )

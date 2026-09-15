@@ -82,15 +82,15 @@ async def member_id_by_slack_id(conn: Conn, slack_user_id: SlackUserId) -> TeamM
 
 async def upsert_member(
     conn: Conn, slack_user_id: SlackUserId, name: str, slack_handle: str | None
-) -> TeamMemberId:
-    member_id = await queries.upsert_member(
+) -> Member:
+    member = await queries.upsert_member(
         conn, name=name, slack_user_id=slack_user_id, slack_handle=slack_handle
     )
 
-    if member_id is None:
+    if member is None:
         raise UnexpectedDBError(f"Failed to upsert member with slack_user_id {slack_user_id}")
 
-    return member_id
+    return member
 
 
 async def list_members(conn: Conn) -> list[Member]:
@@ -99,10 +99,6 @@ async def list_members(conn: Conn) -> list[Member]:
 
 async def get_member(conn: Conn, member_id: TeamMemberId) -> Member | None:
     return await queries.get_member(conn, member_id=member_id)
-
-
-async def get_member_by_slack_id(conn: Conn, slack_user_id: SlackUserId) -> Member | None:
-    return await queries.get_member_by_slack_id(conn, slack_user_id=slack_user_id)
 
 
 async def missing_member_ids(conn: Conn, member_ids: list[TeamMemberId]) -> set[TeamMemberId]:

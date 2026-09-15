@@ -34,8 +34,8 @@ export function TeamPage() {
       <CardHeader>
         <CardTitle>Team</CardTitle>
         <CardDescription>
-          Synced nightly from the Slack @eng group. Manual edits to names are overwritten by the
-          next sync.
+          Everyone who signs in, plus the Slack @eng group (synced nightly). Names come from Slack
+          and are refreshed on sign-in and sync.
         </CardDescription>
         <CardAction className="flex gap-2">
           <Button variant="outline" size="sm" disabled={sync.isPending} onClick={() => sync.mutate()}>

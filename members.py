@@ -19,11 +19,11 @@ async def backfill(
     members = await slack.users_list()
 
     for member in members:
-        if member.id in group_ids and _is_org_human(member, team_id):
+        if member.id in group_ids and is_org_human(member, team_id):
             await db.upsert_member(conn, member.id, member.display_name, member.name)
 
 
-def _is_org_human(member: SlackMember, team_id: str) -> bool:
+def is_org_human(member: SlackMember, team_id: str) -> bool:
     return not (
         member.deleted
         or member.is_bot

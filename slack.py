@@ -57,6 +57,9 @@ class SlackClient:
     async def team_id(self) -> str:
         return (await self._web.auth_test())["team_id"]
 
+    async def user_info(self, user_id: SlackUserId) -> SlackMember:
+        return SlackMember.model_validate((await self._web.users_info(user=user_id))["user"])
+
     async def users_list(self) -> list[SlackMember]:
         members: list[SlackMember] = []
         async for page in await self._web.users_list(limit=200):

@@ -2,12 +2,13 @@
 SELECT id FROM team_member WHERE slack_user_id = :slack_user_id;
 
 
--- name: upsert_member(name, slack_user_id, slack_handle)$
+-- name: upsert_member(name, slack_user_id, slack_handle)^
+-- record_class: Member
 INSERT INTO team_member (name, slack_user_id, slack_handle)
 VALUES (:name, :slack_user_id, :slack_handle)
 ON CONFLICT (slack_user_id)
-DO UPDATE SET name = EXCLUDED.name, slack_handle = EXCLUDED.slack_handle
-RETURNING id;
+DO UPDATE SET name = EXCLUDED.name, slack_handle = EXCLUDED.slack_handle, updated_at = now()
+RETURNING id, name, slack_user_id, slack_handle, pushover_user_key;
 
 
 -- name: list_members()
@@ -46,10 +47,3 @@ SET
     updated_at = now()
 WHERE id = :member_id
 RETURNING id, name, slack_user_id, slack_handle, pushover_user_key;
-
-
--- name: get_member_by_slack_id(slack_user_id)^
--- record_class: Member
-SELECT id, name, slack_user_id, slack_handle, pushover_user_key
-FROM team_member
-WHERE slack_user_id = :slack_user_id;

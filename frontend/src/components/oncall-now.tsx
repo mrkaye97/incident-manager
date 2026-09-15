@@ -4,6 +4,7 @@ import { BellRingIcon } from "lucide-react"
 import { PageDialog } from "@/components/page-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { LoadingState } from "@/components/ui/spinner"
 import { oncallQuery } from "@/lib/api"
 import { levelLabel } from "@/lib/format"
 
@@ -16,6 +17,7 @@ export function OnCallNow() {
         <CardTitle>On call now</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3">
+        {isLoading && <LoadingState className="py-4" />}
         {!isLoading && oncall.length === 0 && (
           <p className="text-sm text-muted-foreground">Nobody is on call.</p>
         )}

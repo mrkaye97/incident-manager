@@ -5,11 +5,14 @@ import { CreateIncidentDialog } from "@/components/create-incident-dialog"
 import { IncidentTable } from "@/components/incident-table"
 import { OnCallNow } from "@/components/oncall-now"
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { LoadingState, Spinner } from "@/components/ui/spinner"
 import { actionItemsQuery, incidentsQuery } from "@/lib/api"
 
 export function OverviewPage() {
-  const { data: incidents = [] } = useQuery(incidentsQuery("OPEN"))
-  const { data: actionItems = [] } = useQuery(actionItemsQuery(true))
+  const { data: incidents = [], isLoading: incidentsLoading } = useQuery(incidentsQuery("OPEN"))
+  const { data: actionItems = [], isLoading: actionItemsLoading } = useQuery(
+    actionItemsQuery(true),
+  )
 
   return (
     <div className="grid gap-6 lg:grid-cols-3">
@@ -21,7 +24,7 @@ export function OverviewPage() {
           </CardAction>
         </CardHeader>
         <CardContent>
-          <IncidentTable incidents={incidents} />
+          {incidentsLoading ? <LoadingState /> : <IncidentTable incidents={incidents} />}
         </CardContent>
       </Card>
       <div className="grid content-start gap-6">
@@ -31,7 +34,11 @@ export function OverviewPage() {
             <CardTitle>Open action items</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2">
-            <p className="text-3xl font-semibold tabular-nums">{actionItems.length}</p>
+            {actionItemsLoading ? (
+              <Spinner className="size-5 text-muted-foreground" />
+            ) : (
+              <p className="text-3xl font-semibold tabular-nums">{actionItems.length}</p>
+            )}
             <Link to="/action-items" className="text-sm text-muted-foreground hover:underline">
               View all →
             </Link>

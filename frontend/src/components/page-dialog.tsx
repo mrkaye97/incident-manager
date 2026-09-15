@@ -113,7 +113,8 @@ export function PageDialog({
         <DialogFooter>
           <Button
             variant="destructive"
-            disabled={target === null || page.isPending}
+            disabled={target === null}
+            loading={page.isPending}
             onClick={submit}
           >
             <BellRingIcon /> Send page

@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { LoadingState } from "@/components/ui/spinner"
 import {
   Table,
   TableBody,
@@ -26,7 +27,7 @@ import {
 import { membersQuery, useSaveMember, useSyncMembers, type Member } from "@/lib/api"
 
 export function TeamPage() {
-  const { data: members = [] } = useQuery(membersQuery)
+  const { data: members = [], isLoading } = useQuery(membersQuery)
   const sync = useSyncMembers()
 
   return (
@@ -38,43 +39,47 @@ export function TeamPage() {
           and are refreshed on sign-in and sync.
         </CardDescription>
         <CardAction className="flex gap-2">
-          <Button variant="outline" size="sm" disabled={sync.isPending} onClick={() => sync.mutate()}>
+          <Button variant="outline" size="sm" loading={sync.isPending} onClick={() => sync.mutate()}>
             <RefreshCwIcon /> Sync from Slack
           </Button>
           <MemberDialog />
         </CardAction>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Slack handle</TableHead>
-              <TableHead>Slack user ID</TableHead>
-              <TableHead>Phone paging</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {members.map((member) => (
-              <TableRow key={member.id}>
-                <TableCell className="font-medium">{member.name}</TableCell>
-                <TableCell>{member.slack_handle ? `@${member.slack_handle}` : "—"}</TableCell>
-                <TableCell className="font-mono text-xs">{member.slack_user_id ?? "—"}</TableCell>
-                <TableCell>
-                  {member.pushover_user_key ? (
-                    <Badge variant="secondary">Pushover</Badge>
-                  ) : (
-                    <span className="text-muted-foreground">Slack only</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-right">
-                  <MemberDialog member={member} />
-                </TableCell>
+        {isLoading ? (
+          <LoadingState />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Slack handle</TableHead>
+                <TableHead>Slack user ID</TableHead>
+                <TableHead>Phone paging</TableHead>
+                <TableHead />
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {members.map((member) => (
+                <TableRow key={member.id}>
+                  <TableCell className="font-medium">{member.name}</TableCell>
+                  <TableCell>{member.slack_handle ? `@${member.slack_handle}` : "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">{member.slack_user_id ?? "—"}</TableCell>
+                  <TableCell>
+                    {member.pushover_user_key ? (
+                      <Badge variant="secondary">Pushover</Badge>
+                    ) : (
+                      <span className="text-muted-foreground">Slack only</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <MemberDialog member={member} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   )
@@ -162,7 +167,7 @@ function MemberDialog({ member }: { member?: Member }) {
             />
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={!name.trim() || save.isPending}>
+            <Button type="submit" disabled={!name.trim()} loading={save.isPending}>
               Save
             </Button>
           </DialogFooter>

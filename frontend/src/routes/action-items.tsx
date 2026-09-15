@@ -3,6 +3,7 @@ import { useState } from "react"
 
 import { ActionItemList } from "@/components/action-item-list"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { LoadingState } from "@/components/ui/spinner"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { actionItemsQuery } from "@/lib/api"
 
@@ -21,7 +22,9 @@ export function ActionItemsPage() {
           </TabsList>
         </Tabs>
       </CardHeader>
-      <CardContent>{!isLoading && <ActionItemList items={items} showIncident />}</CardContent>
+      <CardContent>
+        {isLoading ? <LoadingState /> : <ActionItemList items={items} showIncident />}
+      </CardContent>
     </Card>
   )
 }

@@ -5,6 +5,7 @@ import { ExternalLinkIcon, LogOutIcon, SirenIcon } from "lucide-react"
 import { PageDialog } from "@/components/page-dialog"
 import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
+import { LoadingState } from "@/components/ui/spinner"
 import { configQuery, logout, meQuery } from "@/lib/api"
 
 const NAV = [
@@ -19,7 +20,7 @@ export function Layout() {
   const { data: me } = useQuery(meQuery)
   const { data: config } = useQuery(configQuery)
 
-  if (!me) return null
+  if (!me) return <LoadingState className="min-h-svh items-center" />
 
   return (
     <div className="min-h-svh bg-muted/30">

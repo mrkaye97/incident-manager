@@ -84,7 +84,7 @@ export function CreateIncidentDialog() {
             />
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={!name.trim() || create.isPending}>
+            <Button type="submit" disabled={!name.trim()} loading={create.isPending}>
               Create incident
             </Button>
           </DialogFooter>

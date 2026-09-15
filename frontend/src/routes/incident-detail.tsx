@@ -28,6 +28,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { LoadingState } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import {
   configQuery,
@@ -43,7 +44,7 @@ export function IncidentDetailPage({ incidentId }: { incidentId: string }) {
   const { data, isLoading, error } = useQuery(incidentQuery(incidentId))
   const { data: config } = useQuery(configQuery)
 
-  if (isLoading) return null
+  if (isLoading) return <LoadingState />
   if (error || !data) {
     return <p className="text-muted-foreground">{error?.message ?? "Incident not found"}</p>
   }
@@ -214,7 +215,7 @@ function DescriptionCard({ incident }: { incident: Incident }) {
                 Cancel
               </Button>
               <Button
-                disabled={update.isPending}
+                loading={update.isPending}
                 onClick={() => update.mutate(draft, { onSuccess: () => setEditing(false) })}
               >
                 Save
@@ -263,7 +264,7 @@ function NewActionItem({ incidentId }: { incidentId: string }) {
       <div className="w-44">
         <MemberSelect allowNone value={assignee} onChange={setAssignee} />
       </div>
-      <Button type="submit" disabled={!description.trim() || create.isPending}>
+      <Button type="submit" disabled={!description.trim()} loading={create.isPending}>
         <PlusIcon /> Add
       </Button>
     </form>
@@ -295,7 +296,7 @@ function ResolveButton({ incident }: { incident: Incident }) {
             <Button variant="ghost">Cancel</Button>
           </DialogClose>
           <Button
-            disabled={resolve.isPending}
+            loading={resolve.isPending}
             onClick={() => resolve.mutate(undefined, { onSuccess: () => setOpen(false) })}
           >
             Resolve

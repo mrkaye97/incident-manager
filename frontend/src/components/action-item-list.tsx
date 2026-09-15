@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router"
 
 import { MemberSelect } from "@/components/member-select"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Spinner } from "@/components/ui/spinner"
 import { useUpdateActionItem, type ActionItem } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
@@ -22,13 +23,17 @@ export function ActionItemList({
     <ul className="divide-y">
       {items.map((item) => (
         <li key={item.id} className="flex flex-wrap items-center gap-3 py-3">
-          <Checkbox
-            checked={item.is_completed}
-            aria-label="Completed"
-            onCheckedChange={(checked) =>
-              update.mutate({ id: item.id, is_completed: checked === true })
-            }
-          />
+          {update.isPending && update.variables?.id === item.id ? (
+            <Spinner className="size-4 text-muted-foreground" />
+          ) : (
+            <Checkbox
+              checked={item.is_completed}
+              aria-label="Completed"
+              onCheckedChange={(checked) =>
+                update.mutate({ id: item.id, is_completed: checked === true })
+              }
+            />
+          )}
           <div className="min-w-0 flex-1">
             <p className={cn(item.is_completed && "text-muted-foreground line-through")}>
               {item.description}

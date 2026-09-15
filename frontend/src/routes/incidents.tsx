@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router"
 import { CreateIncidentDialog } from "@/components/create-incident-dialog"
 import { IncidentTable } from "@/components/incident-table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { LoadingState } from "@/components/ui/spinner"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { incidentsQuery, type IncidentStatus } from "@/lib/api"
 
@@ -36,7 +37,9 @@ export function IncidentsPage({ status }: IncidentsSearch) {
           <CreateIncidentDialog />
         </div>
       </CardHeader>
-      <CardContent>{!isLoading && <IncidentTable incidents={incidents} />}</CardContent>
+      <CardContent>
+        {isLoading ? <LoadingState /> : <IncidentTable incidents={incidents} />}
+      </CardContent>
     </Card>
   )
 }

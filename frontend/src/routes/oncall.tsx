@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { LoadingState } from "@/components/ui/spinner"
 import {
   membersQuery,
   overridesQuery,
@@ -83,7 +84,9 @@ export function OnCallPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         <OnCallNow />
         <div className="grid content-start gap-6 lg:col-span-2">
-          {!isLoading &&
+          {isLoading ? (
+            <LoadingState />
+          ) : (
             LEVELS.map((level) => (
               <RotationCard
                 key={level}
@@ -91,7 +94,8 @@ export function OnCallPage() {
                 rotation={rotations.find((r) => r.level === level) ?? null}
                 membersById={membersById}
               />
-            ))}
+            ))
+          )}
         </div>
       </div>
       <ScheduleCard windowStart={window.start} windowEnd={window.end} membersById={membersById} />
@@ -109,7 +113,7 @@ function ScheduleCard({
   windowEnd: string
   membersById: Map<string, Member>
 }) {
-  const { data: shifts = [] } = useQuery(scheduleQuery(windowStart, windowEnd))
+  const { data: shifts = [], isLoading } = useQuery(scheduleQuery(windowStart, windowEnd))
   const start = new Date(windowStart).getTime()
   const span = new Date(windowEnd).getTime() - start
   const now = Date.now()
@@ -134,7 +138,9 @@ function ScheduleCard({
         <CardDescription>Next {WINDOW_DAYS} days, including overrides.</CardDescription>
       </CardHeader>
       <CardContent className="overflow-x-auto">
-        {lanes.length === 0 ? (
+        {isLoading ? (
+          <LoadingState />
+        ) : lanes.length === 0 ? (
           <p className="text-sm text-muted-foreground">No rotation configured.</p>
         ) : (
           <div className="grid min-w-[720px] grid-cols-[6rem_1fr] gap-y-2">
@@ -213,7 +219,7 @@ function RotationCard({
             <Button
               variant="ghost"
               size="sm"
-              disabled={remove.isPending}
+              loading={remove.isPending}
               onClick={() => remove.mutate(level)}
             >
               Remove
@@ -352,7 +358,8 @@ function RotationDialog({
         </div>
         <DialogFooter>
           <Button
-            disabled={!valid || save.isPending}
+            disabled={!valid}
+            loading={save.isPending}
             onClick={() =>
               save.mutate(
                 {
@@ -374,7 +381,7 @@ function RotationDialog({
 }
 
 function OverridesCard({ windowStart, windowEnd }: { windowStart: string; windowEnd: string }) {
-  const { data: overrides = [] } = useQuery(overridesQuery(windowStart, windowEnd))
+  const { data: overrides = [], isLoading } = useQuery(overridesQuery(windowStart, windowEnd))
   const remove = useDeleteOverride()
 
   return (
@@ -387,7 +394,9 @@ function OverridesCard({ windowStart, windowEnd }: { windowStart: string; window
         </CardAction>
       </CardHeader>
       <CardContent>
-        {overrides.length === 0 ? (
+        {isLoading ? (
+          <LoadingState />
+        ) : overrides.length === 0 ? (
           <p className="text-sm text-muted-foreground">No upcoming overrides.</p>
         ) : (
           <ul className="divide-y text-sm">
@@ -403,7 +412,7 @@ function OverridesCard({ windowStart, windowEnd }: { windowStart: string; window
                   size="icon-sm"
                   className="ml-auto"
                   aria-label="Delete override"
-                  disabled={remove.isPending}
+                  loading={remove.isPending && remove.variables === o.id}
                   onClick={() => remove.mutate(o.id)}
                 >
                   <Trash2Icon />
@@ -494,7 +503,8 @@ function OverrideDialog() {
         </div>
         <DialogFooter>
           <Button
-            disabled={!valid || create.isPending}
+            disabled={!valid}
+            loading={create.isPending}
             onClick={() =>
               memberId !== null &&
               create.mutate(

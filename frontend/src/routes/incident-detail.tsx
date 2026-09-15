@@ -12,6 +12,7 @@ import { useState } from "react"
 
 import { ActionItemList } from "@/components/action-item-list"
 import { AffectedCustomers } from "@/components/customers"
+import { Markdown } from "@/components/markdown"
 import { MemberSelect } from "@/components/member-select"
 import { PageDialog } from "@/components/page-dialog"
 import { StatusBadge } from "@/components/status-badge"
@@ -139,9 +140,7 @@ export function IncidentDetailPage({ incidentId }: { incidentId: string }) {
                   </div>
                   <p className="font-medium">{alert.title}</p>
                   {alert.body && (
-                    <p className="line-clamp-3 whitespace-pre-wrap text-muted-foreground">
-                      {alert.body}
-                    </p>
+                    <Markdown className="text-muted-foreground">{alert.body}</Markdown>
                   )}
                   {alert.source_url && (
                     <a
@@ -227,11 +226,11 @@ function DescriptionCard({ incident }: { incident: Incident }) {
             </div>
           </div>
         ) : (
-          <p className="whitespace-pre-wrap text-sm">
-            {incident.description || (
-              <span className="text-muted-foreground">No description yet.</span>
-            )}
-          </p>
+          incident.description ? (
+            <Markdown>{incident.description}</Markdown>
+          ) : (
+            <p className="text-sm text-muted-foreground">No description yet.</p>
+          )
         )}
       </CardContent>
     </Card>

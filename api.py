@@ -262,11 +262,11 @@ class IncidentUpdate(BaseModel):
 @router.get("/incidents")
 async def list_incidents(
     pool: PoolDep,
-    status: IncidentStatus | None = None,
+    status_filter: Annotated[IncidentStatus | None, Query(alias="status")] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> list[IncidentSummary]:
     async with pool.acquire() as conn:
-        return await db.list_incidents(conn, status, limit)
+        return await db.list_incidents(conn, status_filter, limit)
 
 
 @router.get("/incidents/{incident_id}")

@@ -22,15 +22,10 @@ export function OnCallNow() {
           <p className="text-sm text-muted-foreground">Nobody is on call.</p>
         )}
         {oncall.map((entry) => (
-          <div
-            key={entry.level}
-            className="flex items-center justify-between gap-2"
-          >
+          <div key={entry.level} className="flex items-center justify-between gap-2">
             <div>
               <p className="font-medium">{entry.name}</p>
-              <p className="text-xs text-muted-foreground">
-                {levelLabel(entry.level)}
-              </p>
+              <p className="text-xs text-muted-foreground">{levelLabel(entry.level)}</p>
             </div>
             <PageDialog
               memberId={entry.team_member_id}

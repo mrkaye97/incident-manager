@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import aiohttp
 from pydantic import BaseModel
@@ -75,9 +75,9 @@ class PushoverClient:
             data["tags"] = incident_tag(incident_id)
 
         body = await self._request("POST", "/messages.json", data)
-        expires_at = datetime.now(UTC).timestamp() + EXPIRE_SECONDS
+        expires_at = datetime.now(UTC) + timedelta(seconds=EXPIRE_SECONDS)
 
-        return PushoverReceipt(body["receipt"]), datetime.fromtimestamp(expires_at, UTC)
+        return PushoverReceipt(body["receipt"]), expires_at
 
     async def receipt(self, receipt: PushoverReceipt) -> ReceiptStatus:
         body = await self._request("GET", f"/receipts/{receipt}.json")

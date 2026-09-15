@@ -116,9 +116,9 @@ function ScheduleCard({
   membersById: Map<string, Member>
 }) {
   const { data: shifts = [], isLoading } = useQuery(scheduleQuery(windowStart, windowEnd))
+  const [now] = useState(() => Date.now())
   const start = new Date(windowStart).getTime()
   const span = new Date(windowEnd).getTime() - start
-  const now = Date.now()
 
   const lanes = useMemo(
     () => LEVELS.map((level) => [level, shifts.filter((s) => s.level === level)] as const),

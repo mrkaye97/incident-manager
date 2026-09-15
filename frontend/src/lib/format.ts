@@ -8,8 +8,6 @@ export const statusPageUrl = (base: string, _incidentId: string) => base
 
 export const dateTime = (iso: string) => format(new Date(iso), "MMM d, HH:mm")
 
-export const date = (iso: string) => format(new Date(iso), "EEE MMM d")
-
 export const ago = (iso: string) => formatDistanceToNow(new Date(iso), { addSuffix: true })
 
 export const duration = (start: string, end: string | null | undefined) =>

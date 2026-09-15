@@ -4,9 +4,10 @@
 
 This is a barebones, [Hatchet](https://hatchet.run)-backed incident management tool for Slack. Intended to only do a few things:
 
-1. Create a basic on call rotation
-2. Create Slack channels for managing incidents
-3. Page the on-call engineer when needed
+1. Create a basic on call rotation (with overrides)
+2. Create Slack channels for managing incidents, and track action items and affected customers
+3. Page the on-call engineer when needed (Slack plus Pushover, with escalation until acknowledged)
+4. Open incidents automatically from HyperDX alerts
 
 ## Running locally
 
@@ -44,10 +45,6 @@ In the Slack app, add `https://localhost:3000/api/auth/callback` as a Redirect U
 `openid`, `email`, `profile` user scopes, then set `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET`.
 Set `APP_URL` (and `API_URL`, if the API is on a different origin) when deploying.
 
-To dos:
-
-1. Ingest webhooks from alerting tools (HyperDX) to create incidents from (and auto-page on critical)
-2. Use some sort of app (like Pushover maybe) to enable pages to bypass DND
-3. Allow for updating incident descriptions
-4. Allow for creating, reading, etc. post-incident action items (with assignees)
-5. Some kind of "IaC" to set up the necessary Hatchet webhooks
+Pages go out over Slack, and over [Pushover](https://pushover.net) (emergency priority, so they
+bypass Do Not Disturb) for members with a Pushover user key. Set `PUSHOVER_APP_TOKEN` to enable it;
+an unacknowledged page escalates through the on-call list every five minutes.

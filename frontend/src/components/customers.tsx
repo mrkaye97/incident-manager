@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
 import { PencilIcon } from "lucide-react"
 import { useState } from "react"
 
@@ -35,6 +36,18 @@ export function CustomerCheckboxes({
   onChange: (value: string[]) => void
 }) {
   const { data: customers = [] } = useQuery(customersQuery)
+
+  if (customers.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No customers yet. Add some on the{" "}
+        <Link to="/customers" className="underline">
+          Customers
+        </Link>{" "}
+        page.
+      </p>
+    )
+  }
 
   return (
     <div className="grid grid-cols-2 gap-2">

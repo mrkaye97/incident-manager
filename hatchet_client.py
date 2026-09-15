@@ -8,24 +8,16 @@ from hatchet_sdk import Context, Depends, Hatchet
 from pydantic import BaseModel
 
 from pushover import PushoverClient
-from settings import Settings
 from slack import SlackClient
 
 hatchet = Hatchet()
 
 
 class Lifespan:
-    def __init__(
-        self,
-        pool: Pool,
-        slack: SlackClient,
-        pushover: PushoverClient | None,
-        settings: Settings,
-    ) -> None:
+    def __init__(self, pool: Pool, slack: SlackClient, pushover: PushoverClient | None) -> None:
         self.pool = pool
         self.slack = slack
         self.pushover = pushover
-        self.settings = settings
 
 
 def lifespan_dep(

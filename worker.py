@@ -1,11 +1,8 @@
 import logging
 from collections.abc import AsyncGenerator
 
-from asyncpg import create_pool
-from hatchet_sdk import (
-    Context,
-    EmptyModel,
-)
+from asyncpg import Connection, create_pool
+from hatchet_sdk import Context, EmptyModel
 
 import actions
 import commands
@@ -20,6 +17,7 @@ from internal.types import (
     CreateActionItemInput,
     CreateIncidentInput,
     HyperDXAlert,
+    Incident,
     IncidentSummary,
     InteractivityPayload,
     Page,
@@ -54,6 +52,34 @@ from webhooks import (
 
 logger = logging.getLogger("incident-bot")
 
+CHANNEL_COMMAND_HINTS = {
+    Subcommand.UPDATE: "update its description",
+    Subcommand.ACTION: "add an action item",
+    Subcommand.RESOLVE: "resolve it",
+    Subcommand.COMPLETE: "complete action items",
+}
+
+
+async def _open_incident_here(
+    conn: Connection,
+    slack: SlackClient,
+    event: SlackSlashCommand,
+    subcommand: Subcommand,
+    metadata: ViewMetadata,
+) -> Incident | None:
+    incident = await db.find_open_incident_by_channel_id(conn, event.channel_id)
+
+    if incident is None:
+        await slack.respond(
+            event.response_url,
+            f"Run `{subcommand}` from an open incident's channel to "
+            f"{CHANNEL_COMMAND_HINTS[subcommand]}.",
+        )
+        return None
+
+    metadata.incident_id = incident.id
+    return incident
+
 
 @hatchet.task(on_events=[SLACK_SLASH_EVENT], input_validator=SlackSlashCommand)
 async def handle_incident_slash_command(
@@ -62,82 +88,59 @@ async def handle_incident_slash_command(
     conn: ConnectionDep,
     lifespan: LifespanDep,
 ) -> None:
+    slack = lifespan.slack
     metadata = ViewMetadata(channel_id=event.channel_id, user_id=event.user_id)
-    match commands.parse_subcommand(event.text):
+
+    match subcommand := commands.parse_subcommand(event.text):
         case Subcommand.CREATE:
-            await lifespan.slack.views_open(event.trigger_id, create_incident_modal(metadata))
+            await slack.views_open(event.trigger_id, create_incident_modal(metadata))
         case Subcommand.PAGE:
             incidents = await db.list_open_incidents(conn)
-            await lifespan.slack.views_open(
-                event.trigger_id, page_member_modal(metadata, incidents)
-            )
+            await slack.views_open(event.trigger_id, page_member_modal(metadata, incidents))
         case Subcommand.UPDATE:
-            incident = await db.find_open_incident_by_channel_id(conn, event.channel_id)
+            incident = await _open_incident_here(conn, slack, event, subcommand, metadata)
             if incident is None:
-                await lifespan.slack.respond(
-                    event.response_url,
-                    "Run `update` from an open incident's channel to update its description.",
-                )
                 return
-            metadata.incident_id = incident.id
-            await lifespan.slack.views_open(
+            await slack.views_open(
                 event.trigger_id, update_description_modal(metadata, incident.description)
             )
         case Subcommand.ACTION:
-            incident = await db.find_open_incident_by_channel_id(conn, event.channel_id)
+            incident = await _open_incident_here(conn, slack, event, subcommand, metadata)
             if incident is None:
-                await lifespan.slack.respond(
-                    event.response_url,
-                    "Run `action` from an open incident's channel to add an action item.",
-                )
                 return
-            metadata.incident_id = incident.id
-            await lifespan.slack.views_open(event.trigger_id, create_action_item_modal(metadata))
+            await slack.views_open(event.trigger_id, create_action_item_modal(metadata))
         case Subcommand.RESOLVE:
-            incident = await db.find_open_incident_by_channel_id(conn, event.channel_id)
+            incident = await _open_incident_here(conn, slack, event, subcommand, metadata)
             if incident is None:
-                await lifespan.slack.respond(
-                    event.response_url,
-                    "Run `resolve` from an open incident's channel to resolve it.",
-                )
                 return
             try:
                 await actions.resolve_incident(
                     conn,
-                    lifespan.slack,
+                    slack,
                     lifespan.pushover,
                     ResolveIncidentInput(
                         incident_id=incident.id, actor=commands.command_actor(event)
                     ),
                 )
             except ActionError as e:
-                await lifespan.slack.respond(event.response_url, f":warning: {e}")
+                await slack.respond(event.response_url, f":warning: {e}")
         case Subcommand.COMPLETE:
-            incident = await db.find_open_incident_by_channel_id(conn, event.channel_id)
+            incident = await _open_incident_here(conn, slack, event, subcommand, metadata)
             if incident is None:
-                await lifespan.slack.respond(
-                    event.response_url,
-                    "Run `complete` from an open incident's channel to complete action items.",
-                )
                 return
             items = await db.list_open_action_items(conn, incident.id)
             if not items:
-                await lifespan.slack.respond(
-                    event.response_url, "This incident has no open action items."
-                )
+                await slack.respond(event.response_url, "This incident has no open action items.")
                 return
-            metadata.incident_id = incident.id
-            await lifespan.slack.views_open(
-                event.trigger_id, complete_action_items_modal(metadata, items)
-            )
+            await slack.views_open(event.trigger_id, complete_action_items_modal(metadata, items))
         case _:
-            await lifespan.slack.respond(event.response_url, commands.HELP_TEXT)
+            await slack.respond(event.response_url, commands.HELP_TEXT)
 
 
 @hatchet.task(on_events=[SLACK_INTERACTIVITY_EVENT], input_validator=InteractivityPayload)
 async def handle_interactivity(
     payload: InteractivityPayload,
-    ctx: Context,
+    _ctx: Context,
     conn: ConnectionDep,
     lifespan: LifespanDep,
 ) -> None:
@@ -254,7 +257,7 @@ async def update_action_item(
 @hatchet.task(on_crons=["0 6 * * *"])
 async def backfill_members(
     _: EmptyModel,
-    ctx: Context,
+    _ctx: Context,
     conn: ConnectionDep,
     lifespan: LifespanDep,
 ) -> None:
@@ -279,7 +282,7 @@ async def lifespan() -> AsyncGenerator[Lifespan, None]:
     slack = SlackClient(settings.slack_bot_oauth_token)
     pushover = PushoverClient(settings.pushover_app_token) if settings.pushover_app_token else None
     try:
-        yield Lifespan(pool, slack, pushover, settings)
+        yield Lifespan(pool, slack, pushover)
     finally:
         await pool.close()
 

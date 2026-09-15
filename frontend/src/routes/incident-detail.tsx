@@ -212,7 +212,13 @@ function DescriptionCard({ incident }: { incident: Incident }) {
       <CardContent>
         {editing ? (
           <div className="grid gap-2">
-            <Textarea rows={6} value={draft} onChange={(e) => setDraft(e.target.value)} />
+            <Textarea
+              rows={6}
+              autoFocus
+              placeholder="What's happening? Markdown is supported."
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+            />
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setEditing(false)}>
                 Cancel

@@ -13,7 +13,13 @@ import {
 import type { Incident } from "@/lib/api"
 import { ago, duration } from "@/lib/format"
 
-export function IncidentTable({ incidents }: { incidents: Incident[] }) {
+export function IncidentTable({
+  incidents,
+  compact = false,
+}: {
+  incidents: Incident[]
+  compact?: boolean
+}) {
   if (incidents.length === 0) {
     return <p className="py-6 text-center text-sm text-muted-foreground">No incidents.</p>
   }
@@ -23,11 +29,11 @@ export function IncidentTable({ incidents }: { incidents: Incident[] }) {
       <TableHeader>
         <TableRow>
           <TableHead>Incident</TableHead>
-          <TableHead>Status</TableHead>
+          {!compact && <TableHead>Status</TableHead>}
           <TableHead>Lead</TableHead>
           <TableHead>Customers</TableHead>
           <TableHead>Started</TableHead>
-          <TableHead>Duration</TableHead>
+          {!compact && <TableHead>Duration</TableHead>}
           <TableHead className="text-right">Action items</TableHead>
         </TableRow>
       </TableHeader>
@@ -43,17 +49,23 @@ export function IncidentTable({ incidents }: { incidents: Incident[] }) {
                 {incident.name}
               </Link>
             </TableCell>
-            <TableCell>
-              <StatusBadge status={incident.status} />
-            </TableCell>
+            {!compact && (
+              <TableCell>
+                <StatusBadge status={incident.status} />
+              </TableCell>
+            )}
             <TableCell>{incident.lead_name}</TableCell>
             <TableCell>
               <CustomerBadges customerIds={incident.customer_ids} />
             </TableCell>
-            <TableCell className="text-muted-foreground">{ago(incident.start_time)}</TableCell>
-            <TableCell className="text-muted-foreground">
-              {duration(incident.start_time, incident.end_time)}
+            <TableCell className="text-muted-foreground whitespace-nowrap">
+              {ago(incident.start_time)}
             </TableCell>
+            {!compact && (
+              <TableCell className="text-muted-foreground whitespace-nowrap">
+                {duration(incident.start_time, incident.end_time)}
+              </TableCell>
+            )}
             <TableCell className="text-right tabular-nums">
               {incident.open_action_items} open / {incident.total_action_items}
             </TableCell>

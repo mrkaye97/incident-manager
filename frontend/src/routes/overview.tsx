@@ -24,7 +24,7 @@ export function OverviewPage() {
           </CardAction>
         </CardHeader>
         <CardContent>
-          {incidentsLoading ? <LoadingState /> : <IncidentTable incidents={incidents} />}
+          {incidentsLoading ? <LoadingState /> : <IncidentTable incidents={incidents} compact />}
         </CardContent>
       </Card>
       <div className="grid content-start gap-6">
